@@ -1,2 +1,14 @@
 upstream
 /*.pdf
+
+# 构建产物与本地配置
+.gradle/
+.kotlin/
+build/
+local.properties
+.idea/
+*.iml
+.env
+.env.*
+*.jks
+*.keystore

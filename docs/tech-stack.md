@@ -81,7 +81,7 @@ AGP 9 起默认开启内置 Kotlin，AI 很容易按旧教程写错，务必注�
 | 依赖 | 版本 | 用途 | 许可证 |
 |---|---|---|---|
 | `androidx.compose:compose-bom` | 2026.09.00 | 统一 Compose 各库版本，下面的 Compose 库不写版本 | Apache-2.0 |
-| `androidx.compose.ui:ui`、`ui-graphics`、`ui-tooling-preview` | BOM | Compose 基础 | Apache-2.0 |
+| `androidx.compose.ui:ui`、`ui-graphics`、`ui-tooling-preview`、`androidx.compose.foundation:foundation` | BOM | Compose 基础与布局 | Apache-2.0 |
 | `androidx.compose.material3:material3` | BOM | Material 3 组件 | Apache-2.0 |
 | `androidx.compose.ui:ui-tooling` | BOM | 预览（只用 `debugImplementation`） | Apache-2.0 |
 | `androidx.activity:activity-compose` | 1.13.0 | `ComponentActivity.setContent` | Apache-2.0 |
