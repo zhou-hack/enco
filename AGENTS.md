@@ -29,7 +29,7 @@
 | 语言 / UI | Kotlin、Jetpack Compose（Material 3） |
 | 包名 | `xyz.her3.enco`（`applicationId` 与 Kotlin 包名一致；`agent-core` 用 `xyz.her3.enco.core`） |
 | 系统版本 | minSdk 30（Android 11），targetSdk 36；**两台测试机都是 Android 14** |
-| 手机控制 | **只用 Shizuku**：shell 身份的助手进程 + `UiAutomation`。**不使用无障碍服务**，不要添加 `AccessibilityService` |
+| 手机控制 | **Shizuku 为主**：shell 身份的助手进程 + `UiAutomation`，支持主屏、小窗、虚拟屏。**无障碍服务只作备用**：Shizuku 没运行时接管主屏的读屏、截图和操作（见设计文档 7.1、7.2 节） |
 | 并发 | Kotlin Coroutines + Flow |
 | 网络 | OkHttp + kotlinx.serialization，只对接 OpenAI 兼容接口 |
 | 存储 | Room（含 FTS4）+ DataStore；API Key 用 Android Keystore 加密 |
@@ -56,7 +56,7 @@ enco/
 │       │   ├── llm/                  甲：OpenAI 兼容客户端
 │       │   ├── memory/               甲：Room 实体、DAO、检索
 │       │   ├── campus/               甲：通知分类与提取、课表识别、上课提醒
-│       │   ├── device/               乙：Shizuku、助手进程、舞台、悬浮球、预览小窗、语音、通知监听
+│       │   ├── device/               乙：Shizuku 与助手进程、无障碍备用后端、舞台、悬浮球、预览小窗、语音、通知监听
 │       │   ├── ui/                   乙：全部界面，但下面两个目录归甲
 │       │   │   ├── settings/model/   甲：模型设置页
 │       │   │   └── confirm/          甲：确认卡片与接管提示
