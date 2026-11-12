@@ -1,6 +1,6 @@
 # AGENTS.md
 
-本文件是写给 AI 编程助手的项目说明，团队两人的 AI 共用这一份。开始任何工作前请完整读完。
+本文件是写给 AI 编程助手的项目说明，不论使用哪种 AI 工具都以这一份为准。开始任何工作前请完整读完。
 
 ## 1. 项目是什么
 
@@ -10,17 +10,16 @@
 - 开发排期：[docs/roadmap.md](docs/roadmap.md)：每天的任务、验收标准、砍功能顺序
 - 许可证：Apache-2.0
 
-## 2. 先确定你在为谁工作
+## 2. 开发方式
 
-团队两人按模块分工，各自用 AI 开发。**每次开始工作时，先用 `git branch --show-current` 判断角色**，然后读对应的角色说明：
+项目由一人独立开发（借助 AI 编程助手），全部代码都可以修改，直接在 `main` 分支上开发（见第 10 节）。
 
-| 当前分支 | 角色 | 角色说明 |
+代码按“大脑”和“手脚”两层组织（见第 4 节）。**开始工作前，按要改动的模块读对应的模块指南**，同时涉及两层就两份都读：
+
+| 层 | 包含的模块 | 模块指南 |
 |---|---|---|
-| `brain/...` | 甲：Agent 与数据（大脑） | [docs/agents/brain.md](docs/agents/brain.md) |
-| `body/...` | 乙：设备与界面（手脚） | [docs/agents/body.md](docs/agents/body.md) |
-| `main` 或其他 | 不确定 | **先问用户是甲还是乙**，并建议切到对应前缀的分支再开始 |
-
-**只修改自己角色负责的目录**（见第 4 节）。需要改动对方目录时，不要直接改，告诉用户需要和队友协调，必要时在自己代码里留 `// TODO(body): ...` 或 `// TODO(brain): ...`。
+| 大脑：Agent 与数据 | `agent-core/`、`llm/`、`memory/`、`campus/`、模型设置页、确认卡片、`eval/` | [docs/agents/brain.md](docs/agents/brain.md) |
+| 手脚：设备与界面 | `device/`、助手进程 AIDL、其余全部界面 | [docs/agents/body.md](docs/agents/body.md) |
 
 ## 3. 技术栈
 
@@ -40,50 +39,46 @@
 | 测试 | JUnit 4、kotlinx-coroutines-test、Turbine、MockWebServer；优先手写假实现，不用 mock 框架 |
 | 格式化 | Spotless + ktlint（提交前执行 `.\gradlew.bat spotlessApply`） |
 
-## 4. 目录与归属
+## 4. 目录结构
 
 ```text
 enco/
-├── AGENTS.md                         共享：本文件
-├── agent-core/                       甲：纯 Kotlin/JVM 模块，不依赖 Android
+├── AGENTS.md                         本文件
+├── agent-core/                       大脑：纯 Kotlin/JVM 模块，不依赖 Android
 │   └── src/main/kotlin/xyz/her3/enco/core/
-│       ├── api/                      ★ 接口合同：双方共同维护，修改规则见第 5 节
-│       ├── agent/                    甲：Orchestrator、Planner、Operator、Reflector、Curator
-│       ├── guard/                    甲：敏感动作识别
-│       ├── perception/               甲：元素列表压缩、标注截图的坐标计算
-│       ├── protocol/                 甲：动作协议解析与校验
-│       └── prompt/                   甲：Prompt 组装（模板放在 src/main/resources/prompts/）
+│       ├── api/                      ★ 分层接口：大脑与手脚之间的边界，修改规则见第 5 节
+│       ├── agent/                    Orchestrator、Planner、Operator、Reflector、Curator
+│       ├── guard/                    敏感动作识别
+│       ├── perception/               元素列表压缩、标注截图的坐标计算
+│       ├── protocol/                 动作协议解析与校验
+│       └── prompt/                   Prompt 组装（模板放在 src/main/resources/prompts/）
 ├── app/
 │   └── src/main/
-│       ├── aidl/xyz/her3/enco/device/shell/   乙：助手进程的 AIDL 接口
+│       ├── aidl/xyz/her3/enco/device/shell/   手脚：助手进程的 AIDL 接口
 │       ├── java/xyz/her3/enco/
-│       │   ├── llm/                  甲：OpenAI 兼容客户端
-│       │   ├── memory/               甲：Room 实体、DAO、检索
-│       │   ├── campus/               甲：通知分类与提取、课表识别、上课提醒
-│       │   ├── device/               乙：Shizuku 与助手进程、无障碍备用后端、舞台、悬浮球、预览小窗、语音、通知监听
-│       │   ├── ui/                   乙：全部界面，但下面两个目录归甲
-│       │   │   ├── settings/model/   甲：模型设置页
-│       │   │   └── confirm/          甲：确认卡片与接管提示
-│       │   └── EncoApp.kt            共享：Application 与 ServiceLocator
-│       └── res/values/
-│           ├── strings.xml           乙
-│           └── strings_brain.xml     甲（字符串分文件存放，避免合并冲突）
-├── eval/                             甲：评测任务与结果
-├── scripts/                          共享：init-upstream.ps1 等辅助脚本
+│       │   ├── llm/                  大脑：OpenAI 兼容客户端
+│       │   ├── memory/               大脑：Room 实体、DAO、检索
+│       │   ├── campus/               大脑：通知分类与提取、课表识别、上课提醒
+│       │   ├── device/               手脚：Shizuku 与助手进程、无障碍备用后端、舞台、悬浮球、预览小窗、语音、通知监听
+│       │   ├── ui/                   全部界面
+│       │   │   ├── settings/model/   模型设置页
+│       │   │   └── confirm/          确认卡片与接管提示
+│       │   └── EncoApp.kt            Application 与 ServiceLocator
+│       └── res/values/strings.xml    全部界面文字
+├── eval/                             评测任务与结果
+├── scripts/                          init-upstream.ps1 等辅助脚本
 ├── upstream/                         不入库：参考项目，只读，见第 8 节
-└── docs/                             共享：设计、技术选型、排期、开发日志、第三方声明
+└── docs/                             设计、技术选型、排期、开发日志、第三方声明
 ```
 
-**共享文件**（`settings.gradle.kts`、各 `build.gradle.kts`、`gradle/libs.versions.toml`、`AndroidManifest.xml`、`EncoApp.kt`）两人都可以改，但只做**最小的追加式修改**，不调整别人已经写好的内容，不重新排序、不格式化整个文件。
+## 5. 分层接口（`agent-core/.../core/api/`）
 
-## 5. 接口合同（`agent-core/.../core/api/`）
+这是大脑和手脚两层之间唯一的边界，定义了 `DeviceController`、`Stage`、`Observation`、`RawNode`、`Action`、`ActionResult`、`LlmClient`、`AgentEvent`、`MemoryStore` 等类型（含义见设计文档第 6、7 节和排期 2.2 节）。`agent-core` 只通过这些接口使用设备、模型和存储，从而保持纯 JVM、能在电脑上单测。
 
-这是两人之间唯一的“合同”，定义了 `DeviceController`、`Stage`、`Observation`、`RawNode`、`Action`、`ActionResult`、`LlmClient`、`AgentEvent`、`MemoryStore` 等类型（含义见设计文档第 6、7 节和排期 2.2 节）。
-
-- **不要擅自修改 `api/` 里已有的签名**。确实需要改时：先向用户说明改什么、为什么、对另一方有什么影响，等用户确认已和队友商量好，再修改。
-- 接口改动单独一个提交，提交说明以 `api:` 开头。
+- 修改 `api/` 里已有的签名前，先向用户说明改什么、为什么、影响哪些实现，用户同意后再改。
 - 新增可选字段（带默认值）、新增类型，比修改已有签名更好。
-- 双方都可以写 `api/` 接口的**假实现**（放在各自的测试目录或 `debug` 源集），用来在对方没做完时并行开发。
+- 接口改动和随之必需的实现调整放在同一个提交里（保证每个提交都能编译），提交说明以 `api:` 开头。
+- `api/` 接口的**假实现**（`FakeDeviceController`、`FakeLlmClient`、`FakeAgentEvents` 等）放在测试目录或 `debug` 源集，用来脱离真机和模型测试另一层。
 
 ## 6. 构建、测试与真机调试
 
@@ -95,7 +90,7 @@ Windows 环境，在仓库根目录执行。
 powershell -ExecutionPolicy Bypass -File .\scripts\init-upstream.ps1
 ```
 
-脚本会把三个参考项目拉到 `upstream/`，并固定在同一个版本，保证两人看到的内容一致。已经存在的项目会跳过；加 `-Update` 会重新同步到固定版本，加 `-Update -Latest` 会更新到各项目的最新提交。网络中断会自动重试 3 次；仍然失败就重新运行脚本。
+脚本会把三个参考项目拉到 `upstream/`，并固定在同一个版本，保证每次拉取的内容一致。已经存在的项目会跳过；加 `-Update` 会重新同步到固定版本，加 `-Update -Latest` 会更新到各项目的最新提交。网络中断会自动重试 3 次；仍然失败就重新运行脚本。
 
 | 目的 | 命令 |
 |---|---|
@@ -137,11 +132,11 @@ powershell -ExecutionPolicy Bypass -File .\scripts\init-upstream.ps1
 
 ## 10. Git 规范
 
-- 分支：甲用 `brain/<主题>`，乙用 `body/<主题>`，例如 `brain/orchestrator`、`body/virtual-display`。
+- 分支：直接在 `main` 上开发，不另开功能分支。
 - 提交说明：`<类型>(<范围>): <中文说明>`，类型用 `feat` / `fix` / `refactor` / `test` / `docs` / `chore` / `api`。例如 `feat(device): 虚拟屏支持注入点击`。
-- 小步提交，一个提交只做一件事。
-- 每天至少合并一次到 `main`：先 `git pull --rebase origin main`，编译和测试通过后再合并、推送。
-- 不要 `push --force` 到 `main`，不要改写别人的提交历史。
+- 小步提交，一个提交只做一件事；`main` 上的每个提交都要能编译通过。
+- 每天至少推送一次到 `origin/main`，作为过程记录和备份。
+- 不要 `push --force` 到 `main`，不要改写已经推送的提交历史。
 
 ## 11. 开发日志（参赛评分项）
 
@@ -150,7 +145,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\init-upstream.ps1
 ```markdown
 ## 2026-11-13
 
-### 甲 · LLM 客户端
+### LLM 客户端
 - 完成：OpenAI 兼容客户端，支持流式输出和图片输入
 - 问题：某服务商流式结尾不发 [DONE]，导致读取挂起
 - 解决：连接关闭时也视为结束，并加了超时

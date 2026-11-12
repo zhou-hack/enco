@@ -1,12 +1,12 @@
-# 角色说明：乙 · 设备与界面（手脚）
+# 模块指南：设备与界面（手脚）
 
-你正在为**乙**工作。乙负责 enco 的“手脚”和“脸”：通过 Shizuku（主）和无障碍服务（备用）控制手机，以及用户看到的全部界面。先读完根目录的 [AGENTS.md](../../AGENTS.md)，再读本文件。
+“手脚”和“脸”是 enco 中通过 Shizuku（主）和无障碍服务（备用）控制手机、以及用户看到的全部界面的部分。改动下表里的模块前，先读完根目录的 [AGENTS.md](../../AGENTS.md)，再读本文件。
 
-## 1. 负责范围
+## 1. 模块范围
 
 | 模块 | 目录 | 设计文档章节 |
 |---|---|---|
-| 接口合同（与甲共同维护） | `agent-core/src/main/kotlin/xyz/her3/enco/core/api/` | 7.1 |
+| 分层接口（与大脑共用） | `agent-core/src/main/kotlin/xyz/her3/enco/core/api/` | 7.1 |
 | Shizuku 接入与授权 | `app/src/main/java/xyz/her3/enco/device/shizuku/` | 7.2 |
 | shell 助手进程 | `app/src/main/java/xyz/her3/enco/device/shell/`、`app/src/main/aidl/xyz/her3/enco/device/shell/` | 7.2 |
 | 无障碍备用后端 | `app/src/main/java/xyz/her3/enco/device/a11y/` | 7.1、7.2 |
@@ -14,10 +14,10 @@
 | 预览小窗、悬浮球 | `app/src/main/java/xyz/her3/enco/device/overlay/` | 7.3、7.4 |
 | 语音 | `app/src/main/java/xyz/her3/enco/device/voice/` | 7.5 |
 | 通知监听、前台服务 | `app/src/main/java/xyz/her3/enco/device/service/` | 10 |
-| 界面 | `app/src/main/java/xyz/her3/enco/ui/`（`settings/model/` 和 `confirm/` 除外） | 4.1 |
+| 界面 | `app/src/main/java/xyz/her3/enco/ui/`（`settings/model/` 和 `confirm/` 见 [brain.md](brain.md)） | 4.1 |
 | 字符串 | `app/src/main/res/values/strings.xml` | – |
 
-**不要修改**：`agent-core/` 中 `api/` 以外的目录、`app/.../llm/`、`app/.../memory/`、`app/.../campus/`、`ui/settings/model/`、`ui/confirm/`、`strings_brain.xml`、`eval/`。这些归甲。
+Agent、模型、记忆、校园逻辑见 [brain.md](brain.md)。
 
 **技术选型**：先读 [tech-stack.md](../tech-stack.md) 的第 2 节（构建）、3.2 节（界面）、3.3 节（设备层）、3.5 节（测试）、第 4 节（系统 API）、6.4–6.5 节（Shizuku、助手进程、并发的约定）。
 
@@ -52,29 +52,29 @@
 | 系统小窗 | 以自由窗口模式启动目标 App；读界面只取该窗口，截图按窗口区域裁剪，坐标按窗口换算。原生 Android 14 可能要先开启开发者选项里的自由窗口支持，各家系统的小窗实现不同，**先在两台测试机上确认能不能用** |
 | 虚拟屏 | 助手进程创建，尺寸与主屏一致，画面输出到 `ImageReader`；Android 14 上带**独立焦点**标志，不抢主屏输入；同时带受信任、内容随屏销毁等标志 |
 
-- 舞台对甲透明：`Observation` 里的坐标统一按舞台归一化到 0–1000，截图和节点只包含舞台内的内容。
+- 舞台对大脑透明：`Observation` 里的坐标统一按舞台归一化到 0–1000，截图和节点只包含舞台内的内容。
 - 选中的舞台失败时（App 拒绝在虚拟屏启动、小窗没生效），通过 `AgentEvent` 通知用户，并自动降级到主屏。
 - 输入文字优先用 `ACTION_SET_TEXT`，不依赖输入法，这样虚拟屏里也能输入。
 
 ### 2.4 界面
 
 - Jetpack Compose + Material 3，界面文字全部放进 `strings.xml`。
-- 界面数据只来自 `AgentEvent` 事件流和 `MemoryStore`，不直接调用甲的内部实现。
-- 甲的 Agent 没做好时，用 `debug` 源集里的 `FakeAgentEvents` 按脚本发出假事件，先把时间线、步骤卡片、确认流程做出来。
+- 界面数据只来自 `AgentEvent` 事件流和 `MemoryStore`，不直接调用 Agent 的内部实现。
+- Agent 还没做好时，用 `debug` 源集里的 `FakeAgentEvents` 按脚本发出假事件，先把时间线、步骤卡片、确认流程做出来。
 - 悬浮球：无障碍服务开启时用 `TYPE_ACCESSIBILITY_OVERLAY`，否则用 `TYPE_APPLICATION_OVERLAY`；预览小窗只在 Shizuku 下出现，用 `TYPE_APPLICATION_OVERLAY`。截图前先隐藏悬浮球，避免截进图里。
 - Android 14 的前台服务必须声明类型（执行任务用 `specialUse`，语音用 `microphone`），并在清单里声明对应权限。
 
-### 2.5 和甲的对接点
+### 2.5 和大脑的对接点
 
-| 你提供 | 甲怎么用 |
+| 手脚提供 | 大脑怎么用 |
 |---|---|
 | `DeviceController`（`ShizukuDevice`） | Agent 通过它观察屏幕、执行动作 |
-| `Observation`（原始节点 + 截图） | 甲压缩成元素列表 |
-| 通知监听采集到的原始通知 | 交给甲的 `campus/` 提取函数 |
+| `Observation`（原始节点 + 截图） | 压缩成元素列表 |
+| 通知监听采集到的原始通知 | 交给 `campus/` 的提取函数 |
 
-| 甲提供 | 你怎么用 |
+| 大脑提供 | 手脚怎么用 |
 |---|---|
-| `Action` 定义 | 你负责执行 |
+| `Action` 定义 | 负责执行 |
 | `AgentEvent` 事件流 | 时间线、步骤卡片、悬浮球状态、确认请求 |
 | `MemoryStore` | 记忆与技能管理页 |
 
@@ -94,11 +94,11 @@
 
 ## 4. 当前任务
 
-按 [roadmap.md](../roadmap.md) 第 3 节“乙”这一列，找到今天的日期对应的任务。开始前先确认上一个阶段的验收标准是否达成，没达成的优先补上。
+按 [roadmap.md](../roadmap.md) 第 3 节找到今天的日期对应的任务。开始前先确认上一个阶段的验收标准是否达成，没达成的优先补上。
 
 ## 5. 完成一块工作后
 
 1. `.\gradlew.bat :app:assembleDebug` 通过；改了 `api/` 还要 `.\gradlew.bat :agent-core:test` 通过。
 2. 安装到真机验证，主屏、小窗、虚拟屏三种舞台中受影响的都要试；改动涉及截图或主屏操作时，还要停掉 Shizuku 试一次无障碍后端。
-3. 在 `docs/devlog.md` 追加一条“乙”的记录。
+3. 在 `docs/devlog.md` 追加一条记录。
 4. 按 AGENTS.md 第 10 节的格式提交。

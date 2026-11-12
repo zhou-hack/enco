@@ -1,12 +1,12 @@
-# 角色说明：甲 · Agent 与数据（大脑）
+# 模块指南：Agent 与数据（大脑）
 
-你正在为**甲**工作。甲负责 enco 的“大脑”：多 Agent 如何思考、决策、记忆。先读完根目录的 [AGENTS.md](../../AGENTS.md)，再读本文件。
+“大脑”是 enco 中多 Agent 如何思考、决策、记忆的部分。改动下表里的模块前，先读完根目录的 [AGENTS.md](../../AGENTS.md)，再读本文件。
 
-## 1. 负责范围
+## 1. 模块范围
 
 | 模块 | 目录 | 设计文档章节 |
 |---|---|---|
-| 接口合同（与乙共同维护） | `agent-core/src/main/kotlin/xyz/her3/enco/core/api/` | 6、7.1 |
+| 分层接口（与手脚共用） | `agent-core/src/main/kotlin/xyz/her3/enco/core/api/` | 6、7.1 |
 | 多 Agent 编排 | `agent-core/.../core/agent/` | 6.1、6.2、6.5 |
 | 动作协议 | `agent-core/.../core/protocol/` | 6.3 |
 | 屏幕感知（元素列表压缩） | `agent-core/.../core/perception/` | 6.4 |
@@ -16,10 +16,9 @@
 | 记忆与技能 | `app/src/main/java/xyz/her3/enco/memory/` | 9 |
 | 校园逻辑 | `app/src/main/java/xyz/her3/enco/campus/` | 10 |
 | 界面（仅两个） | `app/.../ui/settings/model/`、`app/.../ui/confirm/` | 8、11 |
-| 字符串 | `app/src/main/res/values/strings_brain.xml` | – |
 | 评测 | `eval/` | 12 |
 
-**不要修改**：`app/.../device/`、`app/src/main/aidl/`、`app/.../ui/` 里除上面两个目录以外的界面、`strings.xml`。这些归乙。
+设备层与其余界面见 [body.md](body.md)。
 
 **技术选型**：先读 [tech-stack.md](../tech-stack.md) 的第 2 节（构建）、3.1 节（`agent-core` 依赖）、3.4 节（数据与网络）、3.5 节（测试）、6.1–6.3 节（网络、序列化、Room 的约定）和第 7 节（模型）。
 
@@ -29,7 +28,7 @@
 
 - `agent-core` 是纯 JVM 模块，Agent 的逻辑都应该能用 `.\gradlew.bat :agent-core:test` 在电脑上验证。
 - 用**假设备**测试 Agent：在 `agent-core/src/test/` 里实现一个 `FakeDeviceController`，按脚本返回录制好的 `Observation`，并记录收到的 `Action`。
-- 录制的屏幕数据放在 `agent-core/src/test/resources/replays/<场景名>/`（每一步一个原始节点 JSON + 一张截图）。乙的设备层做好后，可以在真机上导出真实数据替换进来。
+- 录制的屏幕数据放在 `agent-core/src/test/resources/replays/<场景名>/`（每一步一个原始节点 JSON + 一张截图）。设备层做好后，在真机上导出真实数据替换进来。
 - 用**假模型**测试编排逻辑：`FakeLlmClient` 按顺序返回预设回复，用来验证重试、重新规划、步数上限、卡住检测等分支，不消耗 API 额度。
 
 ### 2.2 Prompt
@@ -49,29 +48,29 @@
 ### 2.4 记忆
 
 - Room 数据库，FTS4 检索。中文检索靠写入时额外生成的**二元分词**列，不引入本地向量模型。
-- `MemoryStore` 接口给乙的记忆页使用，修改接口按 AGENTS.md 第 5 节的规则来。
+- `MemoryStore` 接口供记忆与技能管理页使用，修改接口按 AGENTS.md 第 5 节的规则来。
 
-### 2.5 和乙的对接点
+### 2.5 和手脚的对接点
 
-| 你提供 | 乙怎么用 |
+| 大脑提供 | 手脚怎么用 |
 |---|---|
-| `Action` 定义与校验 | 乙的 `ShizukuDevice` 负责执行 |
-| `AgentEvent` 事件流 | 乙的时间线、步骤卡片、悬浮球状态 |
-| `MemoryStore` | 乙的记忆与技能管理页 |
-| 通知分类与提取函数 | 乙的通知监听服务采集到原始通知后调用 |
+| `Action` 定义与校验 | `ShizukuDevice` / `A11yDevice` 负责执行 |
+| `AgentEvent` 事件流 | 时间线、步骤卡片、悬浮球状态 |
+| `MemoryStore` | 记忆与技能管理页 |
+| 通知分类与提取函数 | 通知监听服务采集到原始通知后调用 |
 
-| 乙提供 | 你怎么用 |
+| 手脚提供 | 大脑怎么用 |
 |---|---|
-| `DeviceController`（`ShizukuDevice`） | `observe()` 拿到原始节点和截图，由你压缩成元素列表 |
-| 执行位置（舞台） | 对你透明：坐标统一按舞台归一化到 0–1000 |
+| `DeviceController`（`ShizukuDevice`） | `observe()` 拿到原始节点和截图，再压缩成元素列表 |
+| 执行位置（舞台） | 对大脑透明：坐标统一按舞台归一化到 0–1000 |
 
 ## 3. 当前任务
 
-按 [roadmap.md](../roadmap.md) 第 3 节“甲”这一列，找到今天的日期对应的任务。开始前先确认上一个阶段的验收标准是否达成，没达成的优先补上。
+按 [roadmap.md](../roadmap.md) 第 3 节找到今天的日期对应的任务。开始前先确认上一个阶段的验收标准是否达成，没达成的优先补上。
 
 ## 4. 完成一块工作后
 
 1. `.\gradlew.bat :agent-core:test` 通过；改了 `app` 里的代码还要 `.\gradlew.bat :app:assembleDebug` 通过。
 2. 涉及真机行为的改动，安装到手机上验证。
-3. 在 `docs/devlog.md` 追加一条“甲”的记录。
+3. 在 `docs/devlog.md` 追加一条记录。
 4. 按 AGENTS.md 第 10 节的格式提交。

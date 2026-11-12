@@ -3,7 +3,7 @@
 > 版本号核对日期：2026-11-12。来源：Google Maven、Maven Central、各项目 GitHub 发布页、Android 官方 AGP 发布说明。
 > 工程搭好后，**版本以 `gradle/libs.versions.toml` 为准**。本文件说明“用什么、为什么、怎么用”，升级依赖时同步更新本文件。
 
-## 1. 开发环境（两人都要装）
+## 1. 开发环境
 
 | 工具 | 版本 | 用途 | 备注 |
 |---|---|---|---|
@@ -16,7 +16,7 @@
 | Python 3 | 可选 | 辅助脚本 | |
 | **Shizuku App** | v13.6.0 或更新 | 测试机上提供 shell 权限 | 从 GitHub Releases 或应用商店安装 |
 | **scrcpy** | v5.0.1 或更新 | 在电脑上投屏、操控、**录制演示视频** | Apache-2.0；`scrcpy --record demo.mp4` |
-| AI 编程助手 | 各自选择 | 写代码 | 都会读取仓库根目录的 `AGENTS.md` |
+| AI 编程助手 | 任选 | 写代码 | 都会读取仓库根目录的 `AGENTS.md` |
 
 `local.properties` 里写 `sdk.dir=...`（Android Studio 打开工程时会自动生成）。**这个文件不能提交。**
 
@@ -61,13 +61,13 @@ AGP 9 起默认开启内置 Kotlin，AI 很容易按旧教程写错，务必注�
 
 - `app` 开启：`buildFeatures { compose = true; aidl = true; buildConfig = true }`。
 - Release 构建**不开启 R8 混淆**（`isMinifyEnabled = false`）。助手进程里的隐藏 API 反射和 AIDL 容易被混淆弄坏，比赛阶段不值得冒这个险。
-- 签名：Debug 用默认调试签名。Release 签名文件和密码放在每个人本地的 `local.properties` 或环境变量里，**不进仓库**；构建脚本读不到时，就退回用调试签名。
+- 签名：Debug 用默认调试签名。Release 签名文件和密码放在本地的 `local.properties` 或环境变量里，**不进仓库**；构建脚本读不到时，就退回用调试签名。
 
 ## 3. 依赖清单
 
 许可证都已核对，与 Apache-2.0 兼容。新增依赖时按同样格式加一行，并登记到 `docs/THIRD_PARTY_NOTICES.md`。
 
-### 3.1 `agent-core`（纯 JVM，甲）
+### 3.1 `agent-core`（纯 JVM）
 
 | 依赖 | 版本 | 用途 | 许可证 |
 |---|---|---|---|
@@ -76,7 +76,7 @@ AGP 9 起默认开启内置 Kotlin，AI 很容易按旧教程写错，务必注�
 
 `agent-core` **只允许依赖这两个库**，不能依赖任何 Android 库，也不能依赖 OkHttp。网络、存储、设备都通过 `api/` 里的接口由 `app` 注入。
 
-### 3.2 `app` 的界面与架构（乙为主）
+### 3.2 `app` 的界面与架构
 
 | 依赖 | 版本 | 用途 | 许可证 |
 |---|---|---|---|
@@ -93,7 +93,7 @@ AGP 9 起默认开启内置 Kotlin，AI 很容易按旧教程写错，务必注�
 | `com.mikepenz:multiplatform-markdown-renderer-m3` | 0.46.0 | 对话消息里的 Markdown 渲染 | Apache-2.0 |
 | `io.coil-kt.coil3:coil-compose` | 3.6.3 | 显示时间线和任务详情里存成文件的截图 | Apache-2.0 |
 
-### 3.3 `app` 的设备层（乙）
+### 3.3 `app` 的设备层
 
 | 依赖 | 版本 | 用途 | 许可证 |
 |---|---|---|---|
@@ -101,7 +101,7 @@ AGP 9 起默认开启内置 Kotlin，AI 很容易按旧教程写错，务必注�
 | `dev.rikka.shizuku:provider` | 13.1.5 | `ShizukuProvider`，在清单中注册，用于接收 Shizuku 的 Binder | MIT |
 | `org.lsposed.hiddenapibypass:hiddenapibypass` | 6.2 | **只在助手进程里**解除隐藏 API 限制（`UiAutomation` 连接、虚拟屏创建等） | Apache-2.0 |
 
-### 3.4 `app` 的数据与网络（甲）
+### 3.4 `app` 的数据与网络
 
 | 依赖 | 版本 | 用途 | 许可证 |
 |---|---|---|---|
@@ -113,7 +113,7 @@ AGP 9 起默认开启内置 Kotlin，AI 很容易按旧教程写错，务必注�
 | `androidx.datastore:datastore-preferences` | 1.3.0 | 设置项（模型配置、执行位置、悬浮球手势等） | Apache-2.0 |
 | `androidx.work:work-runtime-ktx` | 2.12.0 | 上课提醒、定时任务 | Apache-2.0 |
 
-### 3.5 测试与代码质量（两人共用）
+### 3.5 测试与代码质量
 
 | 依赖 | 版本 | 用途 | 许可证 |
 |---|---|---|---|
@@ -122,7 +122,7 @@ AGP 9 起默认开启内置 Kotlin，AI 很容易按旧教程写错，务必注�
 | `org.jetbrains.kotlinx:kotlinx-coroutines-test` | 1.11.0 | `runTest`、虚拟时间（测超时、重试） | Apache-2.0 |
 | `app.cash.turbine:turbine` | 1.2.1 | 测试 Flow（`AgentEvent` 事件顺序） | Apache-2.0 |
 | `com.squareup.okhttp3:mockwebserver3` | 5.5.1 | 模拟模型服务端，测试 LLM 客户端的流式输出和错误处理 | Apache-2.0 |
-| Spotless + ktlint | 8.11.0 / 1.8.0 | 统一代码格式，两个人的 AI 写出来的风格一致 | Apache-2.0 / MIT |
+| Spotless + ktlint | 8.11.0 / 1.8.0 | 统一代码格式，不同 AI 工具写出来的风格一致 | Apache-2.0 / MIT |
 
 ## 4. 平台能力：直接用系统 API，不引入库
 
