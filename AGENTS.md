@@ -44,6 +44,7 @@
 ```text
 enco/
 ├── AGENTS.md                         本文件
+├── CHANGELOG.md                      每次提交对应的变更记录
 ├── agent-core/                       大脑：纯 Kotlin/JVM 模块，不依赖 Android
 │   └── src/main/kotlin/xyz/her3/enco/core/
 │       ├── api/                      ★ 分层接口：大脑与手脚之间的边界，修改规则见第 5 节
@@ -134,6 +135,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\init-upstream.ps1
 
 - 分支：直接在 `main` 上开发，不另开功能分支。
 - 提交说明：`<类型>(<范围>): <中文说明>`，类型用 `feat` / `fix` / `refactor` / `test` / `docs` / `chore` / `api`。例如 `feat(device): 虚拟屏支持注入点击`。
+- 每完成一项有文件变更的工作，先写好提交说明，再把同一条说明记到根目录的 [CHANGELOG.md](CHANGELOG.md) 的「未发布」区，归入当天日期。将本次改动、变更日志和开发日志放进同一个提交。
 - 小步提交，一个提交只做一件事；`main` 上的每个提交都要能编译通过。
 - 每天至少推送一次到 `origin/main`，作为过程记录和备份。
 - 不要 `push --force` 到 `main`，不要改写已经推送的提交历史。
