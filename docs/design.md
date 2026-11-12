@@ -98,6 +98,8 @@
 | 后台任务 | WorkManager + 前台服务 | 定时任务；长任务保活 |
 | 依赖注入 | 手写 ServiceLocator | 规模小，不引入 Hilt，减少构建复杂度 |
 
+具体的库、版本号、构建配置和用法约定见 [tech-stack.md](tech-stack.md)。
+
 ### 5.2 工程结构
 
 ```text

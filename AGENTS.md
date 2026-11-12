@@ -24,17 +24,21 @@
 
 ## 3. 技术栈
 
+**完整的选型、版本、用法约定和“明确不用”的清单见 [docs/tech-stack.md](docs/tech-stack.md)。新增依赖、写构建脚本、接入 Shizuku / Room / 网络之前必须先读它。** 下面只是摘要：
+
 | 领域 | 选型 |
 |---|---|
-| 语言 / UI | Kotlin、Jetpack Compose（Material 3） |
+| 语言 / UI | Kotlin 2.4.21、Jetpack Compose（BOM 2026.09.00，Material 3）、Navigation Compose |
 | 包名 | `xyz.her3.enco`（`applicationId` 与 Kotlin 包名一致；`agent-core` 用 `xyz.her3.enco.core`） |
-| 系统版本 | minSdk 30（Android 11），targetSdk 36；**两台测试机都是 Android 14** |
-| 手机控制 | **Shizuku 为主**：shell 身份的助手进程 + `UiAutomation`，支持主屏、小窗、虚拟屏。**无障碍服务只作备用**：Shizuku 没运行时接管主屏的读屏、截图和操作（见设计文档 7.1、7.2 节） |
-| 并发 | Kotlin Coroutines + Flow |
-| 网络 | OkHttp + kotlinx.serialization，只对接 OpenAI 兼容接口 |
-| 存储 | Room（含 FTS4）+ DataStore；API Key 用 Android Keystore 加密 |
+| 构建 | Gradle 9.9.1、AGP 9.5.1（**内置 Kotlin：不要应用 `kotlin-android` 插件，不能用 kapt**）、KSP 2.3.12、JDK 17、Version Catalog |
+| 系统版本 | compileSdk 37、targetSdk 36、minSdk 30（Android 11）；**两台测试机都是 Android 14** |
+| 手机控制 | **Shizuku 为主**（Shizuku API 13.1.5 + UserService 助手进程 + `UiAutomation` + HiddenApiBypass），支持主屏、小窗、虚拟屏。**无障碍服务只作备用**：Shizuku 没运行时接管主屏的读屏、截图和操作（见设计文档 7.1、7.2 节） |
+| 并发 | Kotlin Coroutines + Flow（`StateFlow` / `SharedFlow`，不用 LiveData、RxJava） |
+| 网络 | OkHttp 5 + okhttp-sse + kotlinx.serialization，只对接 OpenAI 兼容接口，不用 Retrofit 和厂商 SDK |
+| 存储 | Room 2.8（KSP，含 FTS4）+ DataStore；API Key 用 Android Keystore（AES-GCM）加密 |
 | 依赖注入 | 手写 ServiceLocator，不引入 Hilt / Koin |
-| 构建 | Gradle Kotlin DSL + Version Catalog（`gradle/libs.versions.toml`） |
+| 测试 | JUnit 4、kotlinx-coroutines-test、Turbine、MockWebServer；优先手写假实现，不用 mock 框架 |
+| 格式化 | Spotless + ktlint（提交前执行 `.\gradlew.bat spotlessApply`） |
 
 ## 4. 目录与归属
 
@@ -67,7 +71,7 @@ enco/
 ├── eval/                             甲：评测任务与结果
 ├── scripts/                          共享：init-upstream.ps1 等辅助脚本
 ├── upstream/                         不入库：参考项目，只读，见第 8 节
-└── docs/                             共享：设计、排期、开发日志、第三方声明
+└── docs/                             共享：设计、技术选型、排期、开发日志、第三方声明
 ```
 
 **共享文件**（`settings.gradle.kts`、各 `build.gradle.kts`、`gradle/libs.versions.toml`、`AndroidManifest.xml`、`EncoApp.kt`）两人都可以改，但只做**最小的追加式修改**，不调整别人已经写好的内容，不重新排序、不格式化整个文件。
@@ -99,10 +103,12 @@ powershell -ExecutionPolicy Bypass -File .\scripts\init-upstream.ps1
 | 编译 App | `.\gradlew.bat :app:assembleDebug` |
 | 安装到连接的手机 | `.\gradlew.bat :app:installDebug` |
 | App 单元测试 | `.\gradlew.bat :app:testDebugUnitTest` |
+| 自动格式化代码 | `.\gradlew.bat spotlessApply` |
+| 检查格式（不修改） | `.\gradlew.bat spotlessCheck` |
 | 查看日志 | `adb logcat -s enco:* AndroidRuntime:E` |
 | 截取手机屏幕 | `adb exec-out screencap -p > screen.png` |
 
-- **提交前必须编译通过，并且相关单元测试通过。**
+- **提交前必须编译通过、相关单元测试通过，并执行过 `spotlessApply`。**
 - 能放进 `agent-core` 的逻辑尽量放进去，用 JUnit 在电脑上测，不依赖真机。
 - 手机通过 USB 连接时，可以直接安装、看日志、截图来验证改动，不要只凭推测说“应该可以”。
 - 日志统一使用 `enco` 前缀的 tag（如 `enco.device`、`enco.agent`）。

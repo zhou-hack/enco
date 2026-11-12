@@ -19,6 +19,8 @@
 
 **不要修改**：`agent-core/` 中 `api/` 以外的目录、`app/.../llm/`、`app/.../memory/`、`app/.../campus/`、`ui/settings/model/`、`ui/confirm/`、`strings_brain.xml`、`eval/`。这些归甲。
 
+**技术选型**：先读 [tech-stack.md](../tech-stack.md) 的第 2 节（构建）、3.2 节（界面）、3.3 节（设备层）、3.5 节（测试）、第 4 节（系统 API）、6.4–6.5 节（Shizuku、助手进程、并发的约定）。
+
 ## 2. 工作方式
 
 ### 2.1 Shizuku 与助手进程
