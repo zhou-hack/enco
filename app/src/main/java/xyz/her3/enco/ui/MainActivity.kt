@@ -4,6 +4,7 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -38,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import xyz.her3.enco.R
 import xyz.her3.enco.device.shizuku.ShizukuConnection
 import xyz.her3.enco.device.shizuku.ShizukuStatus
+import xyz.her3.enco.ui.screen.ScreenControlService
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -51,8 +53,23 @@ class MainActivity : ComponentActivity() {
                     status = status,
                     onOpenShizuku = ::openShizuku,
                     onRetry = { ShizukuConnection.refresh(requestPermission = true) },
+                    onOpenScreenControl = ::openScreenControl,
                 )
             }
+        }
+    }
+
+    private fun openScreenControl() {
+        try {
+            if (Settings.canDrawOverlays(this)) {
+                startForegroundService(Intent(this, ScreenControlService::class.java))
+                moveTaskToBack(true)
+            } else {
+                startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.fromParts("package", packageName, null)))
+            }
+        } catch (error: RuntimeException) {
+            Log.w("enco.device", "无法打开主屏操控", error)
+            Toast.makeText(this, R.string.screen_control_open_failed, Toast.LENGTH_LONG).show()
         }
     }
 
@@ -79,6 +96,7 @@ private fun EncoWelcome(
     status: ShizukuStatus,
     onOpenShizuku: () -> Unit,
     onRetry: () -> Unit,
+    onOpenScreenControl: () -> Unit,
 ) {
     Surface(modifier = Modifier.fillMaxSize()) {
         Box(
@@ -105,6 +123,14 @@ private fun EncoWelcome(
                     textAlign = TextAlign.Center,
                 )
                 ShizukuCard(status, onOpenShizuku, onRetry)
+                if (status == ShizukuStatus.CONNECTED) {
+                    Button(onClick = onOpenScreenControl) { Text(stringResource(R.string.screen_control_open)) }
+                    Text(
+                        stringResource(R.string.screen_control_permission),
+                        style = MaterialTheme.typography.bodySmall,
+                        textAlign = TextAlign.Center,
+                    )
+                }
             }
         }
     }

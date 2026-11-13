@@ -37,13 +37,14 @@ internal object ShizukuConnection {
     private const val LOG_TAG = "enco.shizuku"
     private const val PERMISSION_REQUEST = 1
     private const val MIN_SERVER_VERSION = 13
+    private const val USER_SERVICE_VERSION = 2
     private const val CONNECT_TIMEOUT_MS = 10_000L
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val args =
         Shizuku
             .UserServiceArgs(ComponentName(BuildConfig.APPLICATION_ID, EncoShellService::class.java.name))
             .processNameSuffix("shell")
-            .version(BuildConfig.VERSION_CODE)
+            .version(USER_SERVICE_VERSION)
             .daemon(false)
     private val mutableStatus = MutableStateFlow(ShizukuStatus.CHECKING)
     val status = mutableStatus.asStateFlow()
@@ -52,6 +53,12 @@ internal object ShizukuConnection {
     private var refreshJob: Job? = null
     private var timeoutJob: Job? = null
     private var handshakeJob: Job? = null
+    private var screenService: IEncoShellService? = null
+
+    suspend fun <T> withScreenService(action: (IEncoShellService) -> T): T {
+        val service = checkNotNull(screenService) { "Shizuku 助手进程未连接" }
+        return withContext(Dispatchers.IO) { action(service) }
+    }
 
     private val connection =
         object : ServiceConnection {
@@ -63,11 +70,13 @@ internal object ShizukuConnection {
                 handshakeJob =
                     scope.launch {
                         try {
+                            val service = IEncoShellService.Stub.asInterface(binder)
                             val uid =
                                 withContext(Dispatchers.IO) {
-                                    IEncoShellService.Stub.asInterface(binder).processUid
+                                    service.processUid
                                 }
                             timeoutJob?.cancel()
+                            screenService = service
                             Log.i(LOG_TAG, "助手进程已连接，UID=$uid")
                             mutableStatus.value = ShizukuStatus.CONNECTED
                         } catch (error: CancellationException) {
@@ -81,6 +90,7 @@ internal object ShizukuConnection {
             }
 
             override fun onServiceDisconnected(name: ComponentName) {
+                screenService = null
                 handshakeJob?.cancel()
                 timeoutJob?.cancel()
                 mutableStatus.value =
@@ -90,6 +100,7 @@ internal object ShizukuConnection {
 
     init {
         Shizuku.addBinderDeadListener {
+            screenService = null
             refreshJob?.cancel()
             handshakeJob?.cancel()
             timeoutJob?.cancel()
@@ -130,6 +141,7 @@ internal object ShizukuConnection {
                         }
 
                         else -> {
+                            screenService = null
                             mutableStatus.value = current
                         }
                     }
@@ -164,6 +176,7 @@ internal object ShizukuConnection {
     }
 
     private fun reportConnectionFailure(error: Exception) {
+        screenService = null
         timeoutJob?.cancel()
         Log.w(LOG_TAG, "Shizuku 连接失败", error)
         mutableStatus.value =

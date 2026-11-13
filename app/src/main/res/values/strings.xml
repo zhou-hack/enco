@@ -16,4 +16,16 @@
     <string name="shizuku_open_failed">无法打开 Shizuku，请手动打开或安装。</string>
     <string name="shizuku_grant">请求授权</string>
     <string name="shizuku_retry">重新连接</string>
+    <string name="screen_control_open">打开主屏操控</string>
+    <string name="screen_control_permission">首次使用请允许 enco 显示在其他应用上层，再返回打开面板。</string>
+    <string name="screen_control_open_failed">无法打开操控面板，请检查悬浮窗权限。</string>
+    <string name="screen_control_capture">截图</string>
+    <string name="screen_control_back">返回</string>
+    <string name="screen_control_home">主页</string>
+    <string name="screen_control_close">关闭</string>
+    <string name="screen_control_notification">enco 主屏操控运行中</string>
+    <string name="screen_control_preview">主屏截图预览</string>
+    <string name="screen_control_hint">在预览里点击或滑动。</string>
+    <string name="screen_control_input_failed">屏幕已变化或操作失败，请重新截图。</string>
+    <string name="screen_control_failed">操作失败，请检查 Shizuku 和手机解锁状态。</string>
 </resources>
