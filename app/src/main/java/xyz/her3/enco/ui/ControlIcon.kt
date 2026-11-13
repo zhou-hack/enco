@@ -22,6 +22,9 @@ internal enum class ControlSymbol {
     HOME,
     CLOSE,
     NEXT,
+    CHAT,
+    SEND,
+    STOP,
 }
 
 @Composable
@@ -116,6 +119,23 @@ internal fun ControlIcon(
             ControlSymbol.NEXT -> {
                 line(9, 5, 16, 12)
                 line(16, 12, 9, 19)
+            }
+
+            ControlSymbol.CHAT -> {
+                rectangle(3, 4, 18, 13, 4)
+                line(7, 17, 7, 21)
+                line(7, 21, 12, 17)
+                line(8, 10, 16, 10)
+            }
+
+            ControlSymbol.SEND -> {
+                line(12, 20, 12, 4)
+                line(6, 10, 12, 4)
+                line(12, 4, 18, 10)
+            }
+
+            ControlSymbol.STOP -> {
+                rectangle(6, 6, 12, 12, 2)
             }
         }
     }

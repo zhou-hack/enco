@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import xyz.her3.enco.R
 import xyz.her3.enco.device.shizuku.ShizukuStatus
+import xyz.her3.enco.ui.chat.ChatIconButton
 import xyz.her3.enco.ui.theme.EncoText
 import xyz.her3.enco.ui.theme.LocalEncoColors
 
@@ -38,6 +39,7 @@ import xyz.her3.enco.ui.theme.LocalEncoColors
 internal fun EncoHome(
     status: ShizukuStatus,
     overlayAllowed: Boolean,
+    onOpenChat: () -> Unit,
     onOpenShizuku: () -> Unit,
     onRetry: () -> Unit,
     onOverlaySettings: () -> Unit,
@@ -70,7 +72,7 @@ internal fun EncoHome(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                EncoText(stringResource(R.string.app_name), size = 19.sp, weight = FontWeight.Bold)
+                ChatIconButton(ControlSymbol.BACK, R.string.chat_title, onClick = onOpenChat)
                 StatusLabel(
                     if (ready) R.string.screen_control_ready else R.string.screen_control_setup_needed,
                     ready,

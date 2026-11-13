@@ -88,6 +88,7 @@ AGP 9 起默认开启内置 Kotlin，AI 很容易按旧教程写错，务必注�
 | `androidx.core:core-ktx` | 1.19.1 | Android 扩展函数 | Apache-2.0 |
 | `androidx.lifecycle:lifecycle-runtime-compose` | 2.11.0 | `collectAsStateWithLifecycle` | Apache-2.0 |
 | `androidx.lifecycle:lifecycle-viewmodel-compose` | 2.11.0 | 各页面的 ViewModel | Apache-2.0 |
+| `androidx.lifecycle:lifecycle-viewmodel` | 2.11.0 | 聊天状态与请求的生命周期 | Apache-2.0 |
 | `androidx.lifecycle:lifecycle-service` | 2.11.0 | `LifecycleService`：悬浮球、预览小窗所在的前台服务里使用 Compose | Apache-2.0 |
 | `androidx.navigation:navigation-compose` | 2.10.2 | 页面导航，用 `@Serializable` 的类型安全路由 | Apache-2.0 |
 | `com.mikepenz:multiplatform-markdown-renderer-m3` | 0.46.0 | 对话消息里的 Markdown 渲染 | Apache-2.0 |
@@ -161,6 +162,7 @@ AGP 9 起默认开启内置 Kotlin，AI 很容易按旧教程写错，务必注�
 ### 6.1 网络与模型
 
 - 请求地址：`{baseUrl}/chat/completions`，`baseUrl` 由用户填写（通常以 `/v1` 结尾）。
+- 模型地址使用 HTTPS。本机模型可使用 `localhost` 或 `127.0.0.1` 的 HTTP 地址。
 - 流式输出：用 `okhttp-sse` 的 `EventSource` 读取，收到 `[DONE]` 或连接关闭都视为结束。
 - 超时：连接 15 秒；首个 token 60 秒；整次请求可取消（跟随协程取消）。
 - 图片：长边缩放到 1280 后用 JPEG（质量 80）编码，以 base64 `data:image/jpeg;base64,...` 发送。
