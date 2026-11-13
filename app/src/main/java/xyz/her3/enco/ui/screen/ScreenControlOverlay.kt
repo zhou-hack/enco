@@ -5,10 +5,6 @@ import android.graphics.PixelFormat
 import android.util.Log
 import android.view.Gravity
 import android.view.WindowManager
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -35,6 +31,7 @@ import xyz.her3.enco.R
 import xyz.her3.enco.device.shell.IEncoShellService
 import xyz.her3.enco.device.shell.ScreenFrame
 import xyz.her3.enco.device.shizuku.ShizukuConnection
+import xyz.her3.enco.ui.theme.EncoTheme
 
 internal class ScreenControlOverlay(
     context: Context,
@@ -72,7 +69,7 @@ internal class ScreenControlOverlay(
         view.setViewTreeViewModelStoreOwner(this)
         view.setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
         view.setContent {
-            MaterialTheme(colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()) {
+            EncoTheme {
                 ScreenControlPanel(
                     frame = frame,
                     busy = busy,

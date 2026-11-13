@@ -1,31 +1,46 @@
 package xyz.her3.enco.ui.screen
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import xyz.her3.enco.R
 import xyz.her3.enco.device.shell.ScreenFrame
+import xyz.her3.enco.ui.ControlIcon
+import xyz.her3.enco.ui.ControlSymbol
+import xyz.her3.enco.ui.theme.EncoText
+import xyz.her3.enco.ui.theme.LocalEncoColors
 import kotlin.math.roundToInt
 
 @Composable
@@ -39,31 +54,82 @@ internal fun ScreenControlPanel(
     onTouch: (Long, Int, Int, Int, Int, Boolean) -> Unit,
     onClose: () -> Unit,
 ) {
-    Surface(
-        modifier = Modifier.padding(8.dp).widthIn(max = 280.dp),
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        shadowElevation = 4.dp,
+    val colors = LocalEncoColors.current
+    val panelShape = RoundedCornerShape(22.dp)
+    Column(
+        modifier =
+            Modifier
+                .padding(8.dp)
+                .widthIn(max = 232.dp)
+                .shadow(6.dp, panelShape)
+                .background(colors.panel, panelShape)
+                .border(1.dp, colors.line, panelShape)
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            if (errorMessage != null) {
-                Text(stringResource(errorMessage), color = MaterialTheme.colorScheme.error)
+            Box(
+                Modifier.size(28.dp).background(colors.accentTint, RoundedCornerShape(9.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                ControlIcon(ControlSymbol.PHONE, Modifier.size(17.dp), colors.accent)
             }
-            if (frame != null) {
-                ScreenPreview(frame, onTouch)
-                Text(stringResource(R.string.screen_control_hint), style = MaterialTheme.typography.bodySmall)
-            }
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                Button(onClick = onCapture, enabled = !busy) { Text(stringResource(R.string.screen_control_capture)) }
-                TextButton(onClick = onBack, enabled = !busy) { Text(stringResource(R.string.screen_control_back)) }
-                TextButton(onClick = onHome, enabled = !busy) { Text(stringResource(R.string.screen_control_home)) }
-                TextButton(onClick = onClose) { Text(stringResource(R.string.screen_control_close)) }
-            }
+            EncoText(
+                stringResource(R.string.screen_control_title),
+                modifier = Modifier.weight(1f),
+                weight = FontWeight.SemiBold,
+            )
+            PanelAction(ControlSymbol.CLOSE, R.string.screen_control_close, true, onClose)
         }
+        Column(
+            modifier = Modifier.fillMaxWidth().background(colors.inset, RoundedCornerShape(14.dp)).padding(10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            if (frame != null) ScreenPreview(frame, onTouch)
+            EncoText(
+                stringResource(errorMessage ?: if (frame != null) R.string.screen_control_hint else R.string.screen_control_empty),
+                size = 12.sp,
+                color = if (errorMessage == null) colors.muted else colors.error,
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+        ) {
+            PanelAction(ControlSymbol.BACK, R.string.screen_control_back, !busy, onBack)
+            PanelAction(ControlSymbol.CAPTURE, R.string.screen_control_capture, !busy, onCapture, primary = true)
+            PanelAction(ControlSymbol.HOME, R.string.screen_control_home, !busy, onHome)
+        }
+    }
+}
+
+@Composable
+private fun PanelAction(
+    symbol: ControlSymbol,
+    label: Int,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    primary: Boolean = false,
+) {
+    val colors = LocalEncoColors.current
+    val description = stringResource(label)
+    Box(
+        modifier =
+            Modifier
+                .size(48.dp)
+                .clip(CircleShape)
+                .background(if (primary && enabled) colors.accent else Color.Transparent)
+                .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+                .semantics { contentDescription = description },
+        contentAlignment = Alignment.Center,
+    ) {
+        val tint = if (primary && enabled) colors.onAccent else colors.muted
+        ControlIcon(symbol, Modifier.size(20.dp), tint)
     }
 }
 
@@ -74,7 +140,7 @@ private fun ScreenPreview(
 ) {
     val image = frame.image ?: return
     val ratio = image.width.toFloat() / image.height
-    BoxWithConstraints(modifier = Modifier.width(248.dp)) {
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         Image(
             bitmap = image.asImageBitmap(),
             contentDescription = stringResource(R.string.screen_control_preview),
@@ -82,8 +148,9 @@ private fun ScreenPreview(
             modifier =
                 Modifier
                     .align(Alignment.Center)
-                    .width(minOf(maxWidth, 264.dp * ratio))
+                    .width(minOf(maxWidth, 296.dp * ratio))
                     .aspectRatio(ratio)
+                    .clip(RoundedCornerShape(8.dp))
                     .pointerInput(frame.id) {
                         awaitEachGesture {
                             val down = awaitFirstDown()
