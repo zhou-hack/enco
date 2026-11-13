@@ -21,3 +21,9 @@
 
 - 完成：通过 ADB 将 enco Debug 版（0.1.0）安装到已连接的 Android 15 手机。冷启动成功，确认 `MainActivity` 进入前台，启动后的日志未发现该进程的 `AndroidRuntime` 错误。
 - AI 工具：Codex 执行安装、启动和日志验证。
+
+### Shizuku 授权与助手进程
+
+- 完成：启动页检测 Shizuku 并在首次需要时请求授权，显示未运行、授权管理、连接结果及重试入口。授权后由 Shizuku 启动 UserService，通过固定 AIDL 接口读取助手进程 UID 来确认连接。
+- 验证：格式检查及 Debug 构建通过。两个单测任务均为 `NO-SOURCE`。在 Android 15 手机上确认授权弹窗出现，并在授权后验证启动页和日志都显示助手进程已连接。该手机的 Shizuku 以 root 模式运行，握手返回 UID 0。ADB 启动模式（UID 2000）待验证。
+- AI 工具：Codex 实现权限状态与连接，执行真机构建、安装和联调。

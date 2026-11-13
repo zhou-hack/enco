@@ -100,6 +100,7 @@ AGP 9 起默认开启内置 Kotlin，AI 很容易按旧教程写错，务必注�
 | `dev.rikka.shizuku:api` | 13.1.5 | 检测 Shizuku 状态、申请授权、绑定 UserService | MIT |
 | `dev.rikka.shizuku:provider` | 13.1.5 | `ShizukuProvider`，在清单中注册，用于接收 Shizuku 的 Binder | MIT |
 | `org.lsposed.hiddenapibypass:hiddenapibypass` | 6.2 | **只在助手进程里**解除隐藏 API 限制（`UiAutomation` 连接、虚拟屏创建等） | Apache-2.0 |
+| `org.jetbrains.kotlinx:kotlinx-coroutines-android` | 1.11.0 | Shizuku 状态回调与 Binder 调用的线程切换 | Apache-2.0 |
 
 ### 3.4 `app` 的数据与网络
 

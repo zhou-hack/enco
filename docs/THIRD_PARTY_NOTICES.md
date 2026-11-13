@@ -6,6 +6,9 @@
 |---|---|---|
 | [Kotlin](https://github.com/JetBrains/kotlin) | Kotlin 标准库 | Apache-2.0 |
 | [AndroidX Activity 与 Jetpack Compose](https://github.com/androidx/androidx) | Activity 接入 Compose、Compose UI、Foundation、Material 3 | Apache-2.0 |
+| [kotlinx.coroutines](https://github.com/Kotlin/kotlinx.coroutines) | 协程、状态流、Android 主线程调度 | Apache-2.0 |
+| [Shizuku API 与 Provider](https://github.com/RikkaApps/Shizuku-API) | Shizuku 授权及绑定助手进程 | MIT |
+| [AndroidHiddenApiBypass](https://github.com/LSPosed/AndroidHiddenApiBypass) | 助手进程初始化隐藏 API 访问 | Apache-2.0 |
 
 ## 构建与测试
 

@@ -2,4 +2,18 @@
 <resources>
     <string name="app_name">enco</string>
     <string name="app_description">校园 AI 助手</string>
+    <string name="shizuku_title">Shizuku</string>
+    <string name="shizuku_checking">正在检查 Shizuku 状态…</string>
+    <string name="shizuku_stopped">Shizuku 未运行。启动 Shizuku 后返回 enco。</string>
+    <string name="shizuku_update_required">需要 Shizuku 13 或更新版本才能连接助手进程。</string>
+    <string name="shizuku_needs_permission">请授权 enco 使用 Shizuku。</string>
+    <string name="shizuku_requesting_permission">请在 Shizuku 弹窗中选择是否允许。</string>
+    <string name="shizuku_manage_permission">尚未获得授权。请在 Shizuku 的「授权管理」中允许 enco，再返回此页。</string>
+    <string name="shizuku_connecting">正在连接助手进程…</string>
+    <string name="shizuku_connected">已授权，助手进程已连接。</string>
+    <string name="shizuku_connection_failed">无法连接助手进程，请重试。</string>
+    <string name="shizuku_open">打开 Shizuku</string>
+    <string name="shizuku_open_failed">无法打开 Shizuku，请手动打开或安装。</string>
+    <string name="shizuku_grant">请求授权</string>
+    <string name="shizuku_retry">重新连接</string>
 </resources>
