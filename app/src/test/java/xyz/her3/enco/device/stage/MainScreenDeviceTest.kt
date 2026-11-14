@@ -178,7 +178,13 @@ class MainScreenDeviceTest {
             text: String,
         ): Boolean = false
 
-        override fun readGmailInbox(count: Int): Array<String>? = null
+        override fun observeGmail(): String? = null
+
+        override fun actInGmail(
+            frameId: Long,
+            target: Int,
+            query: String?,
+        ): Boolean = false
 
         override fun grantSelfPermissions(): Int = 0
 

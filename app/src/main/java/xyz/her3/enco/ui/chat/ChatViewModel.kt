@@ -171,15 +171,16 @@ internal class ChatViewModel(
             }
         val statusText = getApplication<Application>().getString(status.message)
         val localDetail = status.detail.takeIf { request.kind == PhoneTaskKind.GMAIL_INBOX }.orEmpty()
+        val hasGmailAnswer = localDetail.isNotBlank()
         val canOpenResult =
             status.taskId != null && status.detail.isNotBlank() &&
                 (status.completed || localDetail.isNotBlank()) && request.kind != PhoneTaskKind.WECHAT_MESSAGE
-        val fallback = localResult(statusText, status.detail)
+        val fallback = if (hasGmailAnswer) localDetail else localResult(statusText, status.detail)
         val result =
             buildJsonObject {
                 put("status", statusText)
                 if (localDetail.isNotBlank()) {
-                    put("details_displayed_on_device", true)
+                    put("answer_generated_from_live_gmail", true)
                 } else if (status.detail.isNotBlank()) {
                     put("detail", status.detail)
                 }
@@ -195,7 +196,7 @@ internal class ChatViewModel(
                     model,
                     completedHistory,
                     tool = ChatTool.OPEN_TASK_RESULT.takeIf { canOpenResult },
-                    onText = ::appendReply,
+                    onText = { if (!hasGmailAnswer) appendReply(it) },
                 )
             val openResult = answer.toolCalls?.single()
             if (openResult != null && openResult.function.arguments.isNotBlank()) {
@@ -211,13 +212,13 @@ internal class ChatViewModel(
             }
             conversation += answer
             if (openResult != null) {
-                finishTurn(prompt, answer.content?.let { localResult(it, localDetail) } ?: fallback)
+                finishTurn(prompt, if (hasGmailAnswer) localDetail else answer.content ?: fallback)
                 val taskId = checkNotNull(status.taskId)
                 PhoneTaskService.offerResult(taskId)
                 MainActivity.showTaskResult(getApplication(), taskId)
                 conversation += ChatMessage("tool", """{"status":"result_available_in_enco"}""", toolCallId = openResult.id)
             } else {
-                finishTurn(prompt, localResult(checkNotNull(answer.content), localDetail))
+                finishTurn(prompt, if (hasGmailAnswer) localDetail else checkNotNull(answer.content))
             }
         } catch (error: CancellationException) {
             finishTurn(prompt, fallback)

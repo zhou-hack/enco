@@ -32,6 +32,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import xyz.her3.enco.R
+import xyz.her3.enco.core.agent.GmailOperator
 import xyz.her3.enco.core.agent.PhoneOperator
 import xyz.her3.enco.core.agent.PhoneTaskKind
 import xyz.her3.enco.core.agent.PhoneTaskPermission
@@ -153,7 +154,7 @@ class PhoneTaskService : Service() {
                             }
                             when (kind) {
                                 PhoneTaskKind.GMAIL_INBOX -> {
-                                    readGmailInbox(goal)
+                                    runGmail(goal, client, config)
                                 }
 
                                 PhoneTaskKind.WECHAT_MESSAGE -> {
@@ -243,37 +244,29 @@ class PhoneTaskService : Service() {
         return WeChatTask.parseDraft(reply)
     }
 
-    private suspend fun readGmailInbox(goal: String): PhoneTaskStatus {
+    private suspend fun runGmail(
+        goal: String,
+        client: ChatClient,
+        config: ModelConfig,
+    ): PhoneTaskStatus {
         delay(850)
-        val count =
-            Regex("(?<![0-9])[0-9]{1,3}(?![0-9])")
-                .find(goal)
-                ?.value
-                ?.toIntOrNull()
-                ?.coerceIn(1, 20) ?: 10
-        val rows =
-            ShizukuConnection
-                .withScreenService { it.readGmailInbox(count) }
-                ?.asList()
-                ?.chunked(3)
-                .orEmpty()
-        if (rows.isEmpty()) return PhoneTaskStatus(R.string.phone_task_gmail_unavailable)
-        val result =
-            rows
-                .mapIndexed { index, (sender, subject, date) ->
-                    getString(
-                        R.string.phone_task_gmail_row,
-                        index + 1,
-                        sender,
-                        subject.ifBlank { getString(R.string.phone_task_gmail_no_subject) },
-                        date,
-                    )
-                }.joinToString("\n\n")
-        val title = getString(R.string.phone_task_gmail_count, rows.size, count)
-        return PhoneTaskStatus(
-            if (rows.size == count) R.string.phone_task_finished else R.string.phone_task_not_finished,
-            detail = "$title\n\n$result",
-        )
+        return GmailOperator()
+            .run(
+                goal = goal,
+                observe = { ShizukuConnection.withScreenService { it.observeGmail() } },
+                execute = { frame, control, query ->
+                    try {
+                        ShizukuConnection.withScreenService { it.actInGmail(frame, control, query) }
+                    } catch (error: IllegalStateException) {
+                        Log.w("enco.device", "Gmail 动作未能核对：${error.javaClass.simpleName}")
+                        false
+                    }
+                },
+                decide = { system, input ->
+                    collectReply(client.stream(config, listOf(ChatMessage("system", system), ChatMessage("user", input))))
+                },
+                onStep = { showStep(it, R.string.phone_task_phase_read_gmail) },
+            ).toStatus()
     }
 
     private suspend fun runVision(

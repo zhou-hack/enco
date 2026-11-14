@@ -25,7 +25,7 @@
     <string name="phone_task_stopped">任务已停止。</string>
     <string name="phone_task_allow_title">允许 enco 操控手机？</string>
     <string name="phone_task_allow_body">%1$s\n\n任务文本与所需的设置控件名称会发送给你配置的模型。</string>
-    <string name="phone_task_allow_gmail">%1$s\n\nenco 会在手机上读取 Gmail 收件箱的发件人、主题和时间。邮件列表仅在本机显示。</string>
+    <string name="phone_task_allow_gmail">%1$s\n\nenco 会搜索和打开与任务相关的 Gmail 邮件，并将本次任务读取的界面文字发送给你配置的模型处理。</string>
     <string name="phone_task_allow_wechat_send">%1$s\n\n任务文本和微信截图会发给你配置的视觉模型。enco 会在微信聊天界面核对收件人、输入并发送。</string>
     <string name="phone_task_allow_vision">%1$s\n\n微信截图会发给你配置的视觉模型。付款、转账、密码和验证码由你接管。</string>
     <string name="phone_task_deny">取消</string>
@@ -48,11 +48,7 @@
     <string name="phone_task_app_settings">设置</string>
     <string name="phone_task_app_wechat">微信</string>
     <string name="phone_task_app_gmail">Gmail</string>
-    <string name="phone_task_phase_read_gmail">正在读取收件箱</string>
-    <string name="phone_task_gmail_unavailable">无法读取 Gmail 收件箱，请确认已登录并打开邮件列表。</string>
-    <string name="phone_task_gmail_count">已读取 %1$d / %2$d 条收件箱会话</string>
-    <string name="phone_task_gmail_row">%1$d. %2$s · %4$s\n%3$s</string>
-    <string name="phone_task_gmail_no_subject">无主题</string>
+    <string name="phone_task_phase_read_gmail">正在查看邮件</string>
     <string name="phone_task_overlay_enable">开启快捷悬浮球与任务状态</string>
     <string name="phone_task_overlay_title">手机任务状态</string>
     <string name="phone_task_overlay_notification">enco 快捷球与任务状态运行中</string>

@@ -50,7 +50,13 @@ class EncoShellService : IEncoShellService.Stub() {
         text: String,
     ): Boolean = runAsService { screen.pasteWeChatText(frameId, text) }
 
-    override fun readGmailInbox(count: Int): Array<String>? = runAsService { screen.readGmailInbox(count) }
+    override fun observeGmail(): String? = runAsService { screen.observeGmail() }
+
+    override fun actInGmail(
+        frameId: Long,
+        target: Int,
+        query: String?,
+    ): Boolean = runAsService { screen.actInGmail(frameId, target, query) }
 
     override fun launchApp(app: Int): Boolean = runAsService { ShellAppLauncher.launch(app) }
 

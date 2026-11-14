@@ -32,7 +32,7 @@ internal object ShellAppLauncher {
                 }
 
                 IEncoShellService.APP_GMAIL -> {
-                    listOf("-a", "android.intent.action.MAIN", "-c", "android.intent.category.LAUNCHER", "-p", GmailInboxReader.PACKAGE)
+                    listOf("-a", "android.intent.action.MAIN", "-c", "android.intent.category.LAUNCHER", "-p", GmailScreenReader.PACKAGE)
                 }
 
                 else -> {

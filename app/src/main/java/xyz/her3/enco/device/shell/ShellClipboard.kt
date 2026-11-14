@@ -19,14 +19,15 @@ internal fun pasteFromClipboard(
     automation: UiAutomation,
     text: String,
     field: AccessibilityNodeInfo?,
+    replaceExisting: Boolean = false,
     targetUnchanged: () -> Boolean,
 ): Boolean {
     val clipboard = ShellClipboard()
     val previousDescription = clipboard.description()
     val hasPreviousClip = clipboard.hasClip()
-    val previous = clipboard.read()
     if (previousDescription == null && hasPreviousClip) return false
     if (previousDescription != null && !previousDescription.hasMimeType(ClipDescription.MIMETYPE_TEXT_PLAIN)) return false
+    val previous = clipboard.read()
     if (previousDescription != null && previous == null) return false
     if (previous != null && (0 until previous.itemCount).any { previous.getItemAt(it).uri != null }) return false
     val token = UUID.randomUUID().toString()
@@ -54,10 +55,18 @@ internal fun pasteFromClipboard(
         }
         if (field != null && (
                 !field.refresh() || !field.isFocused || field.isPassword ||
-                    (!field.text.isNullOrEmpty() && !field.isShowingHintText)
+                    (!replaceExisting && !field.text.isNullOrEmpty() && !field.isShowingHintText)
             )
         ) {
             return false
+        }
+        if (replaceExisting && field != null && !field.text.isNullOrEmpty() && !field.isShowingHintText) {
+            val selection =
+                android.os.Bundle().apply {
+                    putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, 0)
+                    putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, field.text.length)
+                }
+            if (!field.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, selection)) return false
         }
         val applied =
             if (field?.actionList?.contains(AccessibilityNodeInfo.AccessibilityAction.ACTION_PASTE) == true) {

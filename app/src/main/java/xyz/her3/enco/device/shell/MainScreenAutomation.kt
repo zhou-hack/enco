@@ -1,10 +1,10 @@
 package xyz.her3.enco.device.shell
 
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.UiAutomation
 import android.graphics.Bitmap
 import android.graphics.Point
 import android.graphics.Rect
-import android.os.Bundle
 import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
@@ -13,11 +13,87 @@ import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import xyz.her3.enco.core.agent.GmailAction
+import xyz.her3.enco.core.protocol.encoJson
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
 internal class MainScreenAutomation {
-    fun readGmailInbox(count: Int): Array<String>? = useAutomation { GmailInboxReader(it).read(count) }
+    private var gmailReader: GmailScreenReader? = null
+
+    fun observeGmail(): String? =
+        useGmail { _, root ->
+            val reader = GmailScreenReader(root, ++frameId)
+            gmailReader = reader
+            encoJson.encodeToString(reader.screen)
+        }
+
+    @Suppress("DEPRECATION")
+    fun actInGmail(
+        id: Long,
+        control: Int,
+        query: String?,
+    ): Boolean {
+        val previous = gmailReader
+        gmailReader = null
+        if (id != frameId || previous == null) return false
+        val entry = previous.entry(control) ?: return false
+        if ((query != null) != (entry.action == GmailAction.SEARCH) ||
+            (query != null && (query.isBlank() || query.length > 160 || query.any(Char::isISOControl)))
+        ) {
+            return false
+        }
+        return useGmail { automation, root ->
+            if (GmailScreenReader(root, id).entry(control) != entry) return@useGmail false
+            withNode(root, entry.path) { node ->
+                when (entry.action) {
+                    GmailAction.TAP, GmailAction.OPEN_MESSAGE -> {
+                        node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                    }
+
+                    GmailAction.SCROLL_FORWARD -> {
+                        node.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
+                    }
+
+                    GmailAction.SCROLL_BACKWARD -> {
+                        node.performAction(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD)
+                    }
+
+                    GmailAction.SEARCH -> {
+                        val pasted =
+                            pasteFromClipboard(automation, checkNotNull(query), node, replaceExisting = true) {
+                                isGmailActive(automation)
+                            }
+                        pasted && isGmailActive(automation) && injectKey(automation, KeyEvent.KEYCODE_ENTER)
+                    }
+                }
+            }
+        } ?: false
+    }
+
+    @Suppress("DEPRECATION")
+    private fun <T> useGmail(action: (UiAutomation, AccessibilityNodeInfo) -> T): T? =
+        useAutomation { automation ->
+            val info = automation.serviceInfo
+            info.flags = info.flags or AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
+            automation.serviceInfo = info
+            val root = awaitRoot(automation) ?: return@useAutomation null
+            try {
+                if (root.packageName?.toString() == GmailScreenReader.PACKAGE) action(automation, root) else null
+            } finally {
+                root.recycle()
+            }
+        }
+
+    @Suppress("DEPRECATION")
+    private fun isGmailActive(automation: UiAutomation): Boolean {
+        val root = awaitRoot(automation) ?: return false
+        return try {
+            root.packageName?.toString() == GmailScreenReader.PACKAGE
+        } finally {
+            root.recycle()
+        }
+    }
 
     private data class Target(
         val size: Point,
@@ -258,12 +334,18 @@ internal class MainScreenAutomation {
         if (key !in ALLOWED_KEYS) return false
         return useAutomation { automation ->
             target = null
-            val time = SystemClock.uptimeMillis()
-            val down = KeyEvent(time, time, KeyEvent.ACTION_DOWN, key, 0)
-            val up = KeyEvent.changeAction(down, KeyEvent.ACTION_UP)
-            val pressed = automation.injectInputEvent(down, true)
-            automation.injectInputEvent(up, true) && pressed
+            injectKey(automation, key)
         }
+    }
+
+    private fun injectKey(
+        automation: UiAutomation,
+        key: Int,
+    ): Boolean {
+        val time = SystemClock.uptimeMillis()
+        val down = KeyEvent(time, time, KeyEvent.ACTION_DOWN, key, 0).apply { source = InputDevice.SOURCE_KEYBOARD }
+        val pressed = automation.injectInputEvent(down, true)
+        return automation.injectInputEvent(KeyEvent.changeAction(down, KeyEvent.ACTION_UP), true) && pressed
     }
 
     @Suppress("DEPRECATION")
@@ -313,31 +395,39 @@ internal class MainScreenAutomation {
         return useAutomation { automation ->
             if (awaitTarget(automation) != expected) return@useAutomation false
             val root = awaitRoot(automation) ?: return@useAutomation false
-            var node = root
             try {
                 if (root.packageName?.toString() != expected.windowPackage || root.className?.toString() != expected.windowClass) {
                     return@useAutomation false
                 }
-                for (index in path) {
-                    if (index !in 0 until node.childCount) return@useAutomation false
-                    val child = node.getChild(index) ?: return@useAutomation false
-                    if (node !== root) node.recycle()
-                    node = child
-                }
-                if (!node.isVisibleToUser || !node.isEnabled || !node.isEditable || node.isPassword) {
-                    return@useAutomation false
-                }
-                val arguments =
-                    Bundle().apply {
-                        putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+                withNode(root, path.toList()) { node ->
+                    if (!node.isVisibleToUser || !node.isEnabled || !node.isEditable || node.isPassword || !node.isFocused) {
+                        return@withNode false
                     }
-                if (!node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)) return@useAutomation false
-                if (!node.refresh()) return@useAutomation false
-                node.text?.toString() == text
+                    pasteFromClipboard(automation, text, node, replaceExisting = true) { awaitTarget(automation) == expected }
+                }
             } finally {
-                if (node !== root) node.recycle()
                 root.recycle()
             }
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun withNode(
+        root: AccessibilityNodeInfo,
+        path: List<Int>,
+        action: (AccessibilityNodeInfo) -> Boolean,
+    ): Boolean {
+        var node = root
+        try {
+            for (index in path) {
+                if (index !in 0 until node.childCount) return false
+                val child = node.getChild(index) ?: return false
+                if (node !== root) node.recycle()
+                node = child
+            }
+            return action(node)
+        } finally {
+            if (node !== root) node.recycle()
         }
     }
 

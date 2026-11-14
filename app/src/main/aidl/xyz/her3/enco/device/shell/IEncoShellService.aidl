@@ -18,7 +18,6 @@ interface IEncoShellService {
     @nullable SettingsFrame observeSettings() = 6;
     boolean performSettingsAction(long frameId, int target, int command) = 7;
     boolean pasteWeChatText(long frameId, String text) = 8;
-    @nullable String[] readGmailInbox(int count) = 9;
     boolean launchApp(int app) = 10;
     int grantSelfPermissions() = 11;
     ShellFrame observeMainScreen() = 12;
@@ -26,5 +25,7 @@ interface IEncoShellService {
     boolean pressKey(int keyCode) = 14;
     boolean launchPackage(String packageName) = 15;
     boolean setText(long frameId, in int[] path, String text) = 16;
+    @nullable String observeGmail() = 17;
+    boolean actInGmail(long frameId, int target, @nullable String query) = 18;
     void destroy() = 16777114;
 }
