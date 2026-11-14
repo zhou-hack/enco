@@ -42,7 +42,7 @@ import xyz.her3.enco.core.agent.WeChatTapDecision
 import xyz.her3.enco.core.agent.WeChatTapReview
 import xyz.her3.enco.core.agent.WeChatTask
 import xyz.her3.enco.device.overlay.PhoneTaskOverlayService
-import xyz.her3.enco.device.shell.GmailInboxReader
+import xyz.her3.enco.device.shell.IEncoShellService
 import xyz.her3.enco.device.shizuku.ShizukuConnection
 import xyz.her3.enco.llm.ChatClient
 import xyz.her3.enco.llm.ChatException
@@ -131,8 +131,17 @@ class PhoneTaskService : Service() {
                         return@launch
                     }
                     val client = ChatClient()
+                    val target =
+                        when (kind) {
+                            PhoneTaskKind.SETTINGS -> IEncoShellService.APP_SETTINGS
+                            PhoneTaskKind.GMAIL_INBOX -> IEncoShellService.APP_GMAIL
+                            PhoneTaskKind.WECHAT_MESSAGE, PhoneTaskKind.WECHAT_NAVIGATION -> IEncoShellService.APP_WECHAT
+                        }
                     val result =
                         withTimeoutOrNull(600_000) {
+                            if (!ShizukuConnection.withScreenService { it.launchApp(target) }) {
+                                return@withTimeoutOrNull PhoneTaskStatus(R.string.phone_task_app_launch_failed)
+                            }
                             when (kind) {
                                 PhoneTaskKind.GMAIL_INBOX -> {
                                     readGmailInbox(goal)
@@ -682,7 +691,6 @@ class PhoneTaskService : Service() {
         internal const val KIND = "kind"
         internal const val PERMISSION = "permission"
         internal const val WECHAT_PACKAGE = "com.tencent.mm"
-        internal const val GMAIL_PACKAGE = GmailInboxReader.PACKAGE
         private const val STOP = "xyz.her3.enco.action.STOP_PHONE_TASK"
         private const val CHANNEL = "phone_task"
         private const val NOTIFICATION = 2

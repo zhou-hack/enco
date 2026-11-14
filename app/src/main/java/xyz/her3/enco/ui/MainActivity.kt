@@ -1,21 +1,16 @@
 package xyz.her3.enco.ui
 
-import android.Manifest
 import android.content.ActivityNotFoundException
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -57,28 +52,10 @@ class MainActivity : ComponentActivity() {
             EncoTheme {
                 var page by rememberSaveable { mutableStateOf(Page.CHAT) }
                 var waitingForShizuku by rememberSaveable { mutableStateOf<ApprovedTask?>(null) }
-                var waitingForNotifications by rememberSaveable { mutableStateOf<ApprovedTask?>(null) }
                 val state by chat.state.collectAsState()
                 val task by PhoneTaskService.status.collectAsState()
                 val runTask: (ApprovedTask) -> Unit = { approved ->
                     chat.dismissPhoneRequest(restoreDraft = !startPhoneTask(approved))
-                }
-                val notifications =
-                    rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
-                        val goal = waitingForNotifications
-                        waitingForNotifications = null
-                        if (goal != null) runTask(goal)
-                    }
-                val runApprovedTask: (ApprovedTask) -> Unit = { approved ->
-                    if (approved.request.kind in setOf(PhoneTaskKind.WECHAT_NAVIGATION, PhoneTaskKind.WECHAT_MESSAGE) &&
-                        approved.permission == PhoneTaskPermission.IMPORTANT_ONLY &&
-                        !overlayAllowed && shouldAskForTaskNotifications()
-                    ) {
-                        waitingForNotifications = approved
-                        notifications.launch(Manifest.permission.POST_NOTIFICATIONS)
-                    } else {
-                        runTask(approved)
-                    }
                 }
                 val back = {
                     if (page == Page.MODELS) chat.cancelSettingsAction()
@@ -129,7 +106,7 @@ class MainActivity : ComponentActivity() {
                                 waitingForShizuku?.let { approved ->
                                     waitingForShizuku = null
                                     page = Page.CHAT
-                                    runApprovedTask(approved)
+                                    runTask(approved)
                                 }
                             }
                         }
@@ -153,7 +130,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 val request = state.phoneRequest
-                if (request != null && waitingForShizuku == null && waitingForNotifications == null && !state.generating) {
+                if (request != null && waitingForShizuku == null && !state.generating) {
                     if (task.running) {
                         LaunchedEffect(request) {
                             chat.dismissPhoneRequest(restoreDraft = true, notice = R.string.phone_task_busy)
@@ -175,7 +152,7 @@ class MainActivity : ComponentActivity() {
                             onAllow = { permission ->
                                 val approved = ApprovedTask(request, permission)
                                 if (ShizukuConnection.status.value == ShizukuStatus.CONNECTED) {
-                                    runApprovedTask(approved)
+                                    runTask(approved)
                                 } else {
                                     waitingForShizuku = approved
                                     page = Page.PHONE
@@ -221,10 +198,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun shouldAskForTaskNotifications(): Boolean =
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-
     private fun startPhoneTask(approved: ApprovedTask): Boolean {
         if (PhoneTaskService.status.value.running) return false
         val (kind, goal) = approved.request
@@ -233,24 +206,6 @@ class MainActivity : ComponentActivity() {
             return false
         }
         try {
-            val target =
-                when (kind) {
-                    PhoneTaskKind.GMAIL_INBOX -> {
-                        packageManager.getLaunchIntentForPackage(PhoneTaskService.GMAIL_PACKAGE)
-                    }
-
-                    PhoneTaskKind.SETTINGS -> {
-                        Intent(Settings.ACTION_SETTINGS)
-                    }
-
-                    PhoneTaskKind.WECHAT_NAVIGATION, PhoneTaskKind.WECHAT_MESSAGE -> {
-                        packageManager.getLaunchIntentForPackage(PhoneTaskService.WECHAT_PACKAGE)
-                    }
-                }
-            if (target == null || target.resolveActivity(packageManager) == null) {
-                Toast.makeText(this, R.string.phone_task_screen, Toast.LENGTH_LONG).show()
-                return false
-            }
             stopService(Intent(this, ScreenControlService::class.java))
             PhoneTaskOverlayService.startIfAllowed(this)
             startForegroundService(
@@ -259,7 +214,6 @@ class MainActivity : ComponentActivity() {
                     .putExtra(PhoneTaskService.KIND, kind.name)
                     .putExtra(PhoneTaskService.PERMISSION, approved.permission.name),
             )
-            startActivity(target)
             return true
         } catch (_: RuntimeException) {
             stopService(Intent(this, PhoneTaskService::class.java))

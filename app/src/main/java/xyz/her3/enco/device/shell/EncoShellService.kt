@@ -52,6 +52,8 @@ class EncoShellService : IEncoShellService.Stub() {
 
     override fun readGmailInbox(count: Int): Array<String>? = runAsService { screen.readGmailInbox(count) }
 
+    override fun launchApp(app: Int): Boolean = runAsService { ShellAppLauncher.launch(app) }
+
     @Synchronized
     private fun <T> runAsService(action: () -> T): T {
         val identity = Binder.clearCallingIdentity()
