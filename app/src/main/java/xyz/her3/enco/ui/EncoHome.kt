@@ -18,18 +18,28 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import xyz.her3.enco.R
+import xyz.her3.enco.device.service.PhoneTaskStatus
 import xyz.her3.enco.device.shizuku.ShizukuStatus
 import xyz.her3.enco.ui.chat.ChatIconButton
 import xyz.her3.enco.ui.theme.EncoText
@@ -44,6 +54,10 @@ internal fun EncoHome(
     onRetry: () -> Unit,
     onOverlaySettings: () -> Unit,
     onOpenScreenControl: () -> Unit,
+    task: PhoneTaskStatus,
+    modelReady: Boolean,
+    onStartTask: (String) -> Unit,
+    onStopTask: () -> Unit,
 ) {
     val colors = LocalEncoColors.current
     val connected = status == ShizukuStatus.CONNECTED
@@ -82,6 +96,7 @@ internal fun EncoHome(
                 EncoText(stringResource(R.string.screen_control_title), size = 30.sp, weight = FontWeight.Bold)
                 EncoText(stringResource(R.string.screen_control_description), color = colors.muted)
             }
+            PhoneTaskCard(task, connected && modelReady, onStartTask, onStopTask)
             Row(
                 modifier =
                     Modifier
@@ -89,7 +104,7 @@ internal fun EncoHome(
                         .clip(groupShape)
                         .background(colors.panel)
                         .border(1.dp, colors.line, groupShape)
-                        .clickable(enabled = ready, role = Role.Button, onClick = onOpenScreenControl)
+                        .clickable(enabled = ready && !task.running, role = Role.Button, onClick = onOpenScreenControl)
                         .heightIn(min = 76.dp)
                         .padding(14.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -155,6 +170,75 @@ internal fun EncoHome(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun PhoneTaskCard(
+    task: PhoneTaskStatus,
+    ready: Boolean,
+    onStart: (String) -> Unit,
+    onStop: () -> Unit,
+) {
+    val colors = LocalEncoColors.current
+    val shape = RoundedCornerShape(22.dp)
+    var goal by rememberSaveable { mutableStateOf("") }
+    val placeholder = stringResource(R.string.phone_task_placeholder)
+    Column(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .background(colors.panel, shape)
+                .border(1.dp, colors.line, shape)
+                .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        EncoText(stringResource(R.string.phone_task_title), size = 17.sp, weight = FontWeight.SemiBold)
+        EncoText(stringResource(R.string.phone_task_description), color = colors.muted, size = 12.sp)
+        BasicTextField(
+            value = goal,
+            onValueChange = { goal = it.take(500) },
+            enabled = !task.running,
+            maxLines = 3,
+            textStyle = TextStyle(color = colors.text, fontSize = 14.sp, lineHeight = 21.sp),
+            cursorBrush = SolidColor(colors.accent),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .background(colors.inset, RoundedCornerShape(12.dp))
+                    .semantics { contentDescription = placeholder }
+                    .padding(12.dp),
+            decorationBox = { input ->
+                Box {
+                    if (goal.isEmpty()) EncoText(placeholder, color = colors.muted)
+                    input()
+                }
+            },
+        )
+        val enabled = task.running || (ready && goal.isNotBlank())
+        Box(
+            modifier =
+                Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(if (enabled) colors.accent else colors.inset)
+                    .clickable(enabled = enabled, role = Role.Button, onClick = { if (task.running) onStop() else onStart(goal) })
+                    .heightIn(min = 48.dp)
+                    .padding(horizontal = 14.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            EncoText(
+                stringResource(if (task.running) R.string.phone_task_stop else R.string.phone_task_start),
+                color = if (enabled) colors.onAccent else colors.muted,
+                weight = FontWeight.SemiBold,
+            )
+        }
+        if (!ready && task.message == R.string.phone_task_idle) {
+            EncoText(stringResource(R.string.phone_task_setup), color = colors.muted, size = 12.sp)
+        } else if (task.message != R.string.phone_task_idle) {
+            val message = if (task.step > 0) stringResource(task.message, task.step) else stringResource(task.message)
+            EncoText(message, color = colors.muted)
+            if (task.detail.isNotBlank()) EncoText(task.detail)
         }
     }
 }

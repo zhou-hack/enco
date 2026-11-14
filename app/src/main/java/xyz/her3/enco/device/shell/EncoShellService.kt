@@ -35,6 +35,14 @@ class EncoShellService : IEncoShellService.Stub() {
 
     override fun pressHome(): Boolean = runAsService { screen.pressKey(KeyEvent.KEYCODE_HOME) }
 
+    override fun observeSettings(): SettingsFrame? = runAsService { screen.observeSettings() }
+
+    override fun performSettingsAction(
+        frameId: Long,
+        target: Int,
+        command: Int,
+    ): Boolean = runAsService { screen.performSettingsAction(frameId, target, command) }
+
     override fun destroy() = exitProcess(0)
 
     @Synchronized

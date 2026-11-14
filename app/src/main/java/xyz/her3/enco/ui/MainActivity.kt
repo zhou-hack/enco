@@ -21,6 +21,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import xyz.her3.enco.R
+import xyz.her3.enco.device.service.PhoneTaskService
 import xyz.her3.enco.device.shizuku.ShizukuConnection
 import xyz.her3.enco.ui.chat.ChatScreen
 import xyz.her3.enco.ui.chat.ChatViewModel
@@ -79,6 +80,7 @@ class MainActivity : ComponentActivity() {
                             onDispose { lifecycle.removeObserver(observer) }
                         }
                         val status by ShizukuConnection.status.collectAsState()
+                        val task by PhoneTaskService.status.collectAsState()
                         EncoHome(
                             status = status,
                             overlayAllowed = overlayAllowed,
@@ -87,10 +89,30 @@ class MainActivity : ComponentActivity() {
                             onOpenShizuku = ::openShizuku,
                             onRetry = { ShizukuConnection.refresh(requestPermission = true) },
                             onOpenScreenControl = ::openScreenControl,
+                            task = task,
+                            modelReady = state.model.isNotBlank(),
+                            onStartTask = ::startPhoneTask,
+                            onStopTask = { stopService(Intent(this, PhoneTaskService::class.java)) },
                         )
                     }
                 }
             }
+        }
+    }
+
+    private fun startPhoneTask(goal: String) {
+        try {
+            val settings = Intent(Settings.ACTION_SETTINGS)
+            if (settings.resolveActivity(packageManager) == null) {
+                Toast.makeText(this, R.string.phone_task_screen, Toast.LENGTH_LONG).show()
+                return
+            }
+            stopService(Intent(this, ScreenControlService::class.java))
+            startForegroundService(Intent(this, PhoneTaskService::class.java).putExtra(PhoneTaskService.GOAL, goal))
+            startActivity(settings)
+        } catch (_: RuntimeException) {
+            stopService(Intent(this, PhoneTaskService::class.java))
+            Toast.makeText(this, R.string.phone_task_error, Toast.LENGTH_LONG).show()
         }
     }
 

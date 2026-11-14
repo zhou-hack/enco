@@ -10,6 +10,7 @@ import android.view.Display
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.accessibility.AccessibilityNodeInfo
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -23,6 +24,57 @@ internal class MainScreenAutomation {
 
     private var frameId = 0L
     private var target: Target? = null
+    private var settingsId = 0L
+    private var settingsEntries: List<SettingsTree.Entry> = emptyList()
+
+    fun observeSettings(): SettingsFrame? {
+        settingsEntries = emptyList()
+        return useSettingsRoot { root ->
+            val tree = SettingsTree(root)
+            if (!tree.blocked) settingsEntries = tree.entries
+            SettingsFrame().apply {
+                id = ++settingsId
+                requiresTakeover = tree.blocked
+                elements =
+                    settingsEntries
+                        .mapIndexed { index, entry ->
+                            SettingsElement().apply {
+                                this.id = index + 1
+                                label = entry.label
+                                canTap = entry.tap
+                                canScrollForward = entry.forward
+                                canScrollBackward = entry.backward
+                            }
+                        }.toTypedArray()
+            }
+        }
+    }
+
+    fun performSettingsAction(
+        id: Long,
+        element: Int,
+        command: Int,
+    ): Boolean {
+        if (id != settingsId) return false
+        val expected = settingsEntries
+        settingsEntries = emptyList()
+        val entry = expected.getOrNull(element - 1) ?: return false
+        return useSettingsRoot { root ->
+            val current = SettingsTree(root)
+            current.entries == expected && current.perform(entry, command)
+        } ?: false
+    }
+
+    @Suppress("DEPRECATION")
+    private fun <T> useSettingsRoot(action: (AccessibilityNodeInfo) -> T): T? =
+        useAutomation { automation ->
+            val root = awaitRoot(automation) ?: return@useAutomation null
+            try {
+                if (root.packageName?.toString() == SETTINGS_PACKAGE) action(root) else null
+            } finally {
+                root.recycle()
+            }
+        }
 
     fun capture(): ScreenFrame =
         useAutomation { automation ->
@@ -107,13 +159,7 @@ internal class MainScreenAutomation {
 
     @Suppress("DEPRECATION")
     private fun awaitTarget(automation: UiAutomation): Target {
-        // UiAutomation 刚连接时，活动窗口可能还没同步。
-        val deadline = SystemClock.uptimeMillis() + 500
-        var root = automation.rootInActiveWindow
-        while (root == null && SystemClock.uptimeMillis() < deadline) {
-            SystemClock.sleep(30)
-            root = automation.rootInActiveWindow
-        }
+        val root = awaitRoot(automation)
         val windowPackage = root?.packageName?.toString()
         val windowClass = root?.className?.toString()
         root?.recycle()
@@ -126,6 +172,17 @@ internal class MainScreenAutomation {
                 .invoke(manager, Display.DEFAULT_DISPLAY) as Display
         val size = Point().also(display::getRealSize)
         return Target(size, display.rotation, windowPackage, windowClass)
+    }
+
+    private fun awaitRoot(automation: UiAutomation): AccessibilityNodeInfo? {
+        // UiAutomation 刚连接时，活动窗口可能还没同步。
+        val deadline = SystemClock.uptimeMillis() + 500
+        var root = automation.rootInActiveWindow
+        while (root == null && SystemClock.uptimeMillis() < deadline) {
+            SystemClock.sleep(30)
+            root = automation.rootInActiveWindow
+        }
+        return root
     }
 
     private fun <T> useAutomation(action: (UiAutomation) -> T): T {
