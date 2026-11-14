@@ -68,7 +68,7 @@ class MainActivity : ComponentActivity() {
                         if (goal != null) runTask(goal)
                     }
                 val runApprovedTask: (String) -> Unit = { goal ->
-                    if (phoneTaskKind(goal) == PhoneTaskKind.WECHAT_NAVIGATION && shouldAskForTaskNotifications()) {
+                    if (phoneTaskKind(goal) == PhoneTaskKind.WECHAT_NAVIGATION && !overlayAllowed && shouldAskForTaskNotifications()) {
                         waitingForNotifications = goal
                         notifications.launch(Manifest.permission.POST_NOTIFICATIONS)
                     } else {
@@ -168,6 +168,7 @@ class MainActivity : ComponentActivity() {
                                 goal,
                             ),
                         confirmLabel = R.string.phone_task_allow,
+                        onEnableOverlay = if (overlayAllowed) null else ::openOverlaySettings,
                         onCancel = { requestedGoal = null },
                         onConfirm = {
                             requestedGoal = null
@@ -284,6 +285,16 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         overlayAllowed = Settings.canDrawOverlays(this)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        PhoneTaskService.setActivityVisible(true)
+    }
+
+    override fun onStop() {
+        PhoneTaskService.setActivityVisible(false)
+        super.onStop()
     }
 
     private fun openOverlaySettings() {

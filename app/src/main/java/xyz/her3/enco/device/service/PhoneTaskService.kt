@@ -8,6 +8,7 @@ import android.app.Service
 import android.content.Intent
 import android.graphics.Bitmap
 import android.os.IBinder
+import android.provider.Settings
 import android.util.Base64
 import android.util.Log
 import android.widget.Toast
@@ -33,6 +34,7 @@ import xyz.her3.enco.core.agent.VisionAction
 import xyz.her3.enco.core.agent.WeChatDraft
 import xyz.her3.enco.core.agent.WeChatTask
 import xyz.her3.enco.core.agent.phoneTaskKind
+import xyz.her3.enco.device.overlay.PhoneTaskOverlay
 import xyz.her3.enco.device.shizuku.ShizukuConnection
 import xyz.her3.enco.llm.ChatClient
 import xyz.her3.enco.llm.ChatException
@@ -48,6 +50,14 @@ internal data class PhoneTaskStatus(
     val detail: String = "",
     val running: Boolean = false,
     val review: PhoneTaskReview? = null,
+    val progress: PhoneTaskProgress? = null,
+)
+
+internal data class PhoneTaskProgress(
+    val app: Int,
+    val message: Int,
+    val target: String,
+    val waiting: Boolean,
 )
 
 internal sealed interface PhoneTaskReview {
@@ -64,6 +74,8 @@ internal sealed interface PhoneTaskReview {
 class PhoneTaskService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var job: Job? = null
+    private var overlay: PhoneTaskOverlay? = null
+    private var appLabel = R.string.phone_task_app_settings
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -83,12 +95,21 @@ class PhoneTaskService : Service() {
             return START_NOT_STICKY
         }
 
+        val kind = phoneTaskKind(goal)
+        appLabel = if (kind == PhoneTaskKind.SETTINGS) R.string.phone_task_app_settings else R.string.phone_task_app_wechat
+        val initialPhase =
+            when (kind) {
+                PhoneTaskKind.SETTINGS -> R.string.phone_task_phase_open_settings
+                PhoneTaskKind.WECHAT_MESSAGE -> R.string.phone_task_phase_edit_message
+                PhoneTaskKind.WECHAT_NAVIGATION -> R.string.phone_task_phase_open_wechat
+            }
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(
             NotificationChannel(CHANNEL, getString(R.string.phone_task_title), NotificationManager.IMPORTANCE_LOW),
         )
-        update(PhoneTaskStatus(R.string.phone_task_running, running = true))
+        update(PhoneTaskStatus(R.string.phone_task_running, running = true, progress = progress(initialPhase)))
         startForeground(NOTIFICATION, notification(status.value))
+        startOverlay()
         job =
             scope.launch {
                 try {
@@ -100,7 +121,7 @@ class PhoneTaskService : Service() {
                     val client = ChatClient()
                     val result =
                         withTimeoutOrNull(600_000) {
-                            when (phoneTaskKind(goal)) {
+                            when (kind) {
                                 PhoneTaskKind.WECHAT_MESSAGE -> {
                                     prepareDraft(goal, client, config)
                                 }
@@ -111,6 +132,13 @@ class PhoneTaskService : Service() {
 
                                 PhoneTaskKind.SETTINGS -> {
                                     delay(850)
+                                    val phase =
+                                        when {
+                                            brightnessGoal.containsMatchIn(goal) -> R.string.phone_task_phase_find_brightness
+                                            bluetoothGoal.containsMatchIn(goal) -> R.string.phone_task_phase_find_bluetooth
+                                            else -> R.string.phone_task_phase_find_setting
+                                        }
+                                    var step = 0
                                     ShizukuConnection
                                         .withSettingsDevice { device ->
                                             PhoneOperator(device).run(
@@ -126,8 +154,18 @@ class PhoneTaskService : Service() {
                                                         ),
                                                     )
                                                 },
-                                                onStep = ::showStep,
+                                                onStep = {
+                                                    step = it
+                                                    showStep(step, phase)
+                                                },
                                                 afterAction = { delay(650) },
+                                                onAction = { label ->
+                                                    if (label == null) {
+                                                        showStep(step, R.string.phone_task_phase_scroll)
+                                                    } else {
+                                                        showStep(step, R.string.phone_task_phase_open_item, label)
+                                                    }
+                                                },
                                             )
                                         }.toStatus()
                                 }
@@ -151,7 +189,7 @@ class PhoneTaskService : Service() {
         client: ChatClient,
         config: ModelConfig,
     ): PhoneTaskStatus {
-        showStep(1)
+        showStep(1, R.string.phone_task_phase_edit_message)
         val reply =
             collectReply(
                 client.stream(
@@ -176,7 +214,8 @@ class PhoneTaskService : Service() {
         var previousImage = ""
         var unchanged = 0
         repeat(40) { index ->
-            val frame = ShizukuConnection.withScreenService { it.captureScreen() }
+            showStep(index + 1, R.string.phone_task_phase_read_wechat)
+            val frame = withOverlayHidden { ShizukuConnection.withScreenService { it.captureScreen() } }
             if (frame.packageName != WECHAT_PACKAGE) return PhoneTaskStatus(R.string.phone_task_takeover)
             val image = frame.image?.softwareImage() ?: return PhoneTaskStatus(R.string.phone_task_screen)
             val fingerprint = withContext(Dispatchers.Default) { image.fingerprint() }
@@ -184,7 +223,6 @@ class PhoneTaskService : Service() {
             unchanged = if (fingerprint == previousImage) unchanged + 1 else 0
             if (unchanged >= 3) return PhoneTaskStatus(R.string.phone_task_stalled)
             previousImage = fingerprint
-            showStep(index + 1)
             val imageUrl =
                 withContext(Dispatchers.Default) {
                     val bytes = ByteArrayOutputStream()
@@ -211,8 +249,15 @@ class PhoneTaskService : Service() {
                     if (WeChatTask.needsManualAction(action.label)) return PhoneTaskStatus(R.string.phone_task_takeover)
                     val answer = CompletableDeferred<Boolean>()
                     pendingTap = answer
-                    show(PhoneTaskStatus(R.string.phone_task_review_tap, running = true, review = PhoneTaskReview.Tap(action, image)))
-                    if (!getSystemService(NotificationManager::class.java).areNotificationsEnabled()) {
+                    show(
+                        PhoneTaskStatus(
+                            R.string.phone_task_review_tap,
+                            running = true,
+                            review = PhoneTaskReview.Tap(action, image),
+                            progress = progress(R.string.phone_task_phase_wait_tap, waiting = true),
+                        ),
+                    )
+                    if (overlay?.isVisible != true && !getSystemService(NotificationManager::class.java).areNotificationsEnabled()) {
                         Toast.makeText(this, R.string.phone_task_return_to_enco, Toast.LENGTH_LONG).show()
                     }
                     val allowed =
@@ -222,34 +267,46 @@ class PhoneTaskService : Service() {
                             pendingTap = null
                         }
                     if (!allowed) return PhoneTaskStatus(R.string.phone_task_stopped)
-                    showStep(index + 1)
+                    showStep(index + 1, R.string.phone_task_phase_tap)
                     delay(950)
-                    val current = ShizukuConnection.withScreenService { it.captureScreen() }
-                    val currentImage = current.image?.softwareImage()
-                    val stillCurrent =
-                        withContext(Dispatchers.Default) {
-                            currentImage != null &&
-                                currentImage.fingerprint() == fingerprint &&
-                                image.sameTapArea(currentImage, action)
+                    feedback =
+                        withOverlayHidden {
+                            val current = ShizukuConnection.withScreenService { it.captureScreen() }
+                            val currentImage = current.image?.softwareImage()
+                            val stillCurrent =
+                                withContext(Dispatchers.Default) {
+                                    currentImage != null &&
+                                        currentImage.fingerprint() == fingerprint &&
+                                        image.sameTapArea(currentImage, action)
+                                }
+                            when {
+                                current.packageName != frame.packageName || !stillCurrent -> {
+                                    "确认期间画面已改变，没有点按。"
+                                }
+
+                                ShizukuConnection.withScreenService { it.tap(current.id, action.x, action.y) } -> {
+                                    "已点按所选位置，检查新画面。"
+                                }
+
+                                else -> {
+                                    "点按未执行，请重新观察。"
+                                }
+                            }
                         }
-                    if (current.packageName != frame.packageName || !stillCurrent) {
-                        feedback = "确认期间画面已改变，没有点按。"
-                        delay(650)
-                        return@repeat
-                    }
-                    val applied = ShizukuConnection.withScreenService { it.tap(current.id, action.x, action.y) }
-                    feedback = if (applied) "已点按所选位置，检查新画面。" else "点按未执行，请重新观察。"
                 }
 
                 is VisionAction.Scroll -> {
                     val from = if (action.up) 730 else 340
                     val to = if (action.up) 340 else 730
-                    val current = ShizukuConnection.withScreenService { it.captureScreen() }
-                    val currentImage = current.image?.softwareImage()
-                    val stillCurrent = withContext(Dispatchers.Default) { currentImage?.fingerprint() == fingerprint }
+                    showStep(index + 1, R.string.phone_task_phase_scroll)
                     val applied =
-                        current.packageName == WECHAT_PACKAGE && stillCurrent &&
-                            ShizukuConnection.withScreenService { it.swipe(current.id, 500, from, 500, to) }
+                        withOverlayHidden {
+                            val current = ShizukuConnection.withScreenService { it.captureScreen() }
+                            val currentImage = current.image?.softwareImage()
+                            val stillCurrent = withContext(Dispatchers.Default) { currentImage?.fingerprint() == fingerprint }
+                            current.packageName == WECHAT_PACKAGE && stillCurrent &&
+                                ShizukuConnection.withScreenService { it.swipe(current.id, 500, from, 500, to) }
+                        }
                     feedback = if (applied) "已滑动，检查新画面。" else "滑动未执行，请重新观察。"
                 }
             }
@@ -283,10 +340,50 @@ class PhoneTaskService : Service() {
         return reply.toString()
     }
 
-    private fun showStep(step: Int) = show(PhoneTaskStatus(R.string.phone_task_step, step, running = true))
+    private fun startOverlay() {
+        if (!Settings.canDrawOverlays(this)) return
+        val capsule =
+            PhoneTaskOverlay(
+                this,
+                onOpen = {
+                    try {
+                        startActivity(taskActivityIntent())
+                    } catch (error: RuntimeException) {
+                        Log.w("enco.device", "无法从任务胶囊返回 enco", error)
+                        Toast.makeText(this, R.string.phone_task_overlay_open_failed, Toast.LENGTH_SHORT).show()
+                    }
+                },
+                onStop = ::cancelTask,
+            )
+        try {
+            capsule.attach()
+            overlay = capsule
+            scope.launch {
+                activityVisible.collect { visible -> capsule.render(status.value.progress, visible) }
+            }
+        } catch (error: RuntimeException) {
+            Log.w("enco.device", "无法打开任务悬浮胶囊", error)
+            capsule.close()
+        }
+    }
+
+    private suspend fun <T> withOverlayHidden(action: suspend () -> T): T = overlay?.withoutOverlay(action) ?: action()
+
+    private fun progress(
+        message: Int,
+        target: String = "",
+        waiting: Boolean = false,
+    ) = PhoneTaskProgress(appLabel, message, target, waiting)
+
+    private fun showStep(
+        step: Int,
+        message: Int,
+        target: String = "",
+    ) = show(PhoneTaskStatus(R.string.phone_task_step, step, running = true, progress = progress(message, target)))
 
     private fun show(state: PhoneTaskStatus) {
         update(state)
+        overlay?.render(state.progress, activityVisible.value)
         getSystemService(NotificationManager::class.java).notify(NOTIFICATION, notification(state))
     }
 
@@ -335,8 +432,13 @@ class PhoneTaskService : Service() {
     override fun onDestroy() {
         if (status.value.running) update(PhoneTaskStatus(R.string.phone_task_stopped))
         scope.cancel()
+        overlay?.close()
+        overlay = null
         super.onDestroy()
     }
+
+    private fun taskActivityIntent(): Intent =
+        Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
 
     private fun notification(state: PhoneTaskStatus): Notification {
         val stop =
@@ -350,16 +452,21 @@ class PhoneTaskService : Service() {
             PendingIntent.getActivity(
                 this,
                 0,
-                Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+                taskActivityIntent(),
                 PendingIntent.FLAG_IMMUTABLE,
             )
         return Notification
             .Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_menu_view)
             .setContentTitle(getString(R.string.phone_task_title))
-            .setContentText(if (state.step > 0) getString(state.message, state.step) else getString(state.message))
-            .setContentIntent(open)
+            .setContentText(
+                state.progress?.let { progress ->
+                    val phase = if (progress.target.isEmpty()) getString(progress.message) else getString(progress.message, progress.target)
+                    getString(R.string.phone_task_progress_line, getString(progress.app), phase)
+                } ?: getString(state.message),
+            ).setContentIntent(open)
             .setOngoing(true)
+            .setVisibility(Notification.VISIBILITY_PRIVATE)
             .addAction(Notification.Action.Builder(null, getString(R.string.phone_task_stop), stop).build())
             .build()
     }
@@ -371,12 +478,19 @@ class PhoneTaskService : Service() {
         private const val STOP = "xyz.her3.enco.action.STOP_PHONE_TASK"
         private const val CHANNEL = "phone_task"
         private const val NOTIFICATION = 2
+        private val brightnessGoal = Regex("亮度|brightness", RegexOption.IGNORE_CASE)
+        private val bluetoothGoal = Regex("蓝牙|藍牙|bluetooth", RegexOption.IGNORE_CASE)
         private val mutableStatus = MutableStateFlow(PhoneTaskStatus(R.string.phone_task_idle))
         internal val status = mutableStatus.asStateFlow()
+        private val activityVisible = MutableStateFlow(false)
         private var pendingTap: CompletableDeferred<Boolean>? = null
 
         internal fun answerTap(allow: Boolean) {
             pendingTap?.complete(allow)
+        }
+
+        internal fun setActivityVisible(visible: Boolean) {
+            activityVisible.value = visible
         }
 
         internal fun dismissDraft() {

@@ -236,8 +236,7 @@ private fun PhoneTaskCard(
         if (!ready && task.message == R.string.phone_task_idle) {
             EncoText(stringResource(R.string.phone_task_setup), color = colors.muted, size = 12.sp)
         } else if (task.message != R.string.phone_task_idle) {
-            val message = if (task.step > 0) stringResource(task.message, task.step) else stringResource(task.message)
-            EncoText(message, color = colors.muted)
+            EncoText(task.statusText(), color = colors.muted)
             if (task.detail.isNotBlank()) EncoText(task.detail)
         }
     }

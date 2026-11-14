@@ -45,6 +45,7 @@ import xyz.her3.enco.R
 import xyz.her3.enco.device.service.PhoneTaskStatus
 import xyz.her3.enco.ui.ControlIcon
 import xyz.her3.enco.ui.ControlSymbol
+import xyz.her3.enco.ui.statusText
 import xyz.her3.enco.ui.theme.EncoText
 import xyz.her3.enco.ui.theme.LocalEncoColors
 
@@ -144,8 +145,7 @@ internal fun ChatScreen(
             }
         }
         if (task.message != R.string.phone_task_idle) {
-            val label = if (task.step > 0) stringResource(task.message, task.step) else stringResource(task.message)
-            EncoText(label, Modifier.padding(bottom = 4.dp), size = 13.sp, color = colors.muted)
+            EncoText(task.statusText(), Modifier.padding(bottom = 4.dp), size = 13.sp, color = colors.muted)
             if (task.detail.isNotBlank()) EncoText(task.detail, Modifier.padding(bottom = 8.dp), size = 13.sp)
         }
         state.chatNotice?.let { notice ->

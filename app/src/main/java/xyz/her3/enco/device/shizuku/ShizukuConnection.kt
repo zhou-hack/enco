@@ -62,7 +62,7 @@ internal object ShizukuConnection {
 
     suspend fun <T> withSettingsDevice(action: suspend (SettingsDevice) -> T): T {
         val service = checkNotNull(screenService) { "Shizuku 助手进程未连接" }
-        return withContext(Dispatchers.IO) { action(SettingsDevice(service)) }
+        return action(SettingsDevice(service))
     }
 
     private val connection =

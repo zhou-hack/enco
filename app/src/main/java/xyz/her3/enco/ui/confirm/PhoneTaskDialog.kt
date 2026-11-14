@@ -47,6 +47,7 @@ internal fun PhoneTaskDialog(
     onConfirm: () -> Unit,
     preview: Bitmap? = null,
     tap: VisionAction.Tap? = null,
+    onEnableOverlay: (() -> Unit)? = null,
 ) {
     val colors = LocalEncoColors.current
     Dialog(onDismissRequest = onCancel, properties = DialogProperties(securePolicy = SecureFlagPolicy.SecureOn)) {
@@ -61,6 +62,9 @@ internal fun PhoneTaskDialog(
         ) {
             EncoText(title, size = 19.sp, weight = FontWeight.Bold)
             EncoText(body, color = colors.muted)
+            if (onEnableOverlay != null) {
+                DialogAction(R.string.phone_task_overlay_enable, false, onEnableOverlay)
+            }
             if (preview != null && tap != null) {
                 Box(
                     Modifier

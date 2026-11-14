@@ -37,6 +37,7 @@ class PhoneOperator(
         decide: suspend (system: String, input: String) -> String,
         onStep: (Int) -> Unit = {},
         afterAction: suspend () -> Unit = {},
+        onAction: (targetLabel: String?) -> Unit = {},
     ): TaskResult {
         var previous: Observation? = null
         var unchanged = 0
@@ -66,6 +67,7 @@ class PhoneOperator(
                         (action as? Action.Tap)?.let { tap ->
                             screen.elements.first { it.id == tap.target }.label
                         }
+                    onAction(targetLabel)
                     feedback =
                         if (device.perform(screen, action)) {
                             if (targetLabel == null) {

@@ -24,16 +24,25 @@ class PhoneOperatorTest {
                         """{"action":"finish","success":true,"summary":"已进入蓝牙"}""",
                     ),
                 )
+            val targets = mutableListOf<String?>()
             val result =
-                PhoneOperator(device).run("进入蓝牙设置", decide = { _, input ->
-                    if (replies.size == 1) {
-                        assertTrue(input.contains("可用裝置"))
-                        assertTrue(input.contains("已点击「藍牙」"))
-                    }
-                    replies.removeFirst()
-                })
+                PhoneOperator(device).run(
+                    "进入蓝牙设置",
+                    decide = { _, input ->
+                        if (replies.size == 1) {
+                            assertTrue(input.contains("可用裝置"))
+                            assertTrue(input.contains("已点击「藍牙」"))
+                        }
+                        replies.removeFirst()
+                    },
+                    onAction = { label ->
+                        assertTrue(device.performed.isEmpty())
+                        targets.add(label)
+                    },
+                )
             assertEquals(TaskResult.Finished(true, "已进入蓝牙"), result)
             assertEquals(listOf(Action.Tap(1)), device.performed)
+            assertEquals(listOf("藍牙"), targets)
         }
 
     @Test
@@ -43,9 +52,11 @@ class PhoneOperatorTest {
             for (target in listOf(1, 2)) {
                 val device = FakeDevice(listOf(unsafe))
                 val result =
-                    PhoneOperator(device).run("浏览", decide = { _, _ ->
-                        """{"action":"tap","target":$target}"""
-                    })
+                    PhoneOperator(device).run(
+                        "浏览",
+                        decide = { _, _ -> """{"action":"tap","target":$target}""" },
+                        onAction = { error("被拦截的动作不应显示为正在执行") },
+                    )
                 assertEquals(TaskResult.TakeOver, result)
                 assertTrue(device.performed.isEmpty())
             }

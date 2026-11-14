@@ -9,17 +9,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
-import androidx.compose.ui.platform.ViewCompositionStrategy
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleOwner
-import androidx.lifecycle.LifecycleRegistry
-import androidx.lifecycle.ViewModelStore
-import androidx.lifecycle.ViewModelStoreOwner
-import androidx.lifecycle.setViewTreeLifecycleOwner
-import androidx.lifecycle.setViewTreeViewModelStoreOwner
-import androidx.savedstate.SavedStateRegistryController
-import androidx.savedstate.SavedStateRegistryOwner
-import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -28,6 +17,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import xyz.her3.enco.R
+import xyz.her3.enco.device.overlay.OverlayContentOwner
 import xyz.her3.enco.device.shell.IEncoShellService
 import xyz.her3.enco.device.shell.ScreenFrame
 import xyz.her3.enco.device.shizuku.ShizukuConnection
@@ -36,16 +26,10 @@ import xyz.her3.enco.ui.theme.EncoTheme
 internal class ScreenControlOverlay(
     context: Context,
     private val onClose: () -> Unit,
-) : LifecycleOwner,
-    SavedStateRegistryOwner,
-    ViewModelStoreOwner {
+) {
     private val windowManager = context.getSystemService(WindowManager::class.java)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    private val registry = LifecycleRegistry(this)
-    private val savedState = SavedStateRegistryController.create(this)
-    override val lifecycle: Lifecycle get() = registry
-    override val savedStateRegistry get() = savedState.savedStateRegistry
-    override val viewModelStore = ViewModelStore()
+    private val contentOwner = OverlayContentOwner()
 
     private var frame by mutableStateOf<ScreenFrame?>(null)
     private var busy by mutableStateOf(false)
@@ -62,12 +46,7 @@ internal class ScreenControlOverlay(
     private val view = ComposeView(context)
 
     fun attach() {
-        savedState.performRestore(null)
-        registry.currentState = Lifecycle.State.RESUMED
-        view.setViewTreeLifecycleOwner(this)
-        view.setViewTreeSavedStateRegistryOwner(this)
-        view.setViewTreeViewModelStoreOwner(this)
-        view.setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+        contentOwner.attach(view)
         view.setContent {
             EncoTheme {
                 ScreenControlPanel(
@@ -129,7 +108,6 @@ internal class ScreenControlOverlay(
     fun close() {
         scope.cancel()
         if (view.isAttachedToWindow) windowManager.removeViewImmediate(view)
-        registry.currentState = Lifecycle.State.DESTROYED
-        viewModelStore.clear()
+        contentOwner.close()
     }
 }
