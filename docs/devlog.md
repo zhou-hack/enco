@@ -168,3 +168,11 @@
 - 兼容：保留 `pasteWeChatText`、`ShellClipboard`、设置专用 `SettingsDevice` 与 Gmail 读取，UserService 版本升至 14。
 - 验证：Spotless、53 项 JVM 测试和 Debug 构建通过。真机动作验收随 `MainScreenDevice` 一起进行。
 - AI 工具：Trae（Kimi-K3.1-Pro）实现 shell 采集与注入，人工补充 AIDL 文本边界校验。
+
+### 主屏 Stage（MainScreenDevice）
+
+- 完成：新增 `device/stage/MainScreenDevice.kt`，实现核心 `DeviceController`。`observe()` 把 shell 控件树经 `ElementCompressor` 压缩为编号元素并附截图与包名；支持编号/坐标点按、长按、滑动、通用文本输入、返回、主页和包名/名称启动。
+- 边界：仅接受主屏；`AskUser/Remember/TakeOverRequest/Finish/TakeOver` 等 Agent 语义动作不由设备执行。`PhoneTaskService` 仍走 `SettingsDevice` 与原微信链路，未提前替换为通用 `ShizukuDevice`。
+- 验证：新增 4 项 Stage 单测（节点映射、元素中心点按、编辑路径输入、包名/名称路由、非法启动与语义动作拒绝、非主屏拒绝），两模块 57 项 JVM 测试与 Debug 构建通过。
+- 待办：真机读屏、输入与导航验收因 ADB 断连暂未执行，已准备临时探针，设备恢复后立即补测；探针不纳入提交。
+- AI 工具：Trae（Kimi-K3.1-Pro）实现 Stage 与假 AIDL 单测。

@@ -20,6 +20,7 @@ import rikka.shizuku.Shizuku
 import xyz.her3.enco.BuildConfig
 import xyz.her3.enco.device.shell.EncoShellService
 import xyz.her3.enco.device.shell.IEncoShellService
+import xyz.her3.enco.device.stage.MainScreenDevice
 
 internal enum class ShizukuStatus {
     CHECKING,
@@ -63,6 +64,11 @@ internal object ShizukuConnection {
     suspend fun <T> withSettingsDevice(action: suspend (SettingsDevice) -> T): T {
         val service = checkNotNull(screenService) { "Shizuku 助手进程未连接" }
         return action(SettingsDevice(service))
+    }
+
+    suspend fun <T> withMainScreenDevice(action: suspend (MainScreenDevice) -> T): T {
+        val service = checkNotNull(screenService) { "Shizuku 助手进程未连接" }
+        return action(MainScreenDevice(service))
     }
 
     private val connection =
