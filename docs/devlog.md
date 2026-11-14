@@ -183,3 +183,12 @@
 - 回归：通知“关闭”停止 `ScreenControlService`，保留 `PhoneTaskOverlayService`。设置专用 Agent 首次回归继承了前次“亮度”搜索页，正确报告无法找到蓝牙入口；重置设置后重试，成功进入蓝牙页并显示设备名称与可用设备，未改动蓝牙开关。
 - 验证：最终筛查本轮 `enco.agent`、`enco.device`、`enco.shizuku` 与 `AndroidRuntime` 日志，未发现新警告或崩溃。真机为 Android 15 的 Shizuku root 模式，未将此结果写成 Shizuku ADB 模式或第二台 Android 14 设备的验收。
 - AI 工具：Trae（Kimi-K3.1-Pro）执行图片、设备、任务与通知回归，并整理排期与验收记录。
+
+## 2026-11-15
+
+### 聊天原生工具调用
+
+- 完成：移除聊天前置 JSON 分类。主聊天通过同一个流式请求回答问题或调用 `phone_control`，收齐并校验工具参数后显示三档授权。任务结束后用 `tool_call_id` 回传状态，由模型接着回答。Gmail 明细只显示在本机，也不会进入后续模型对话历史。
+- 协议：按流式分片拼接工具参数，未正常结束或含多个调用时停止。保留模型返回的 `reasoning_content` 供兼容接口续接，界面只展示回复正文。
+- 验证：Spotless、60 项 JVM 测试和 Debug 构建通过。在 Android 15 测试机 `f788d315` 使用已配置的 `deepseek-flash`，验证普通问答、跟随上下文提出调用、取消授权、两档允许打开蓝牙设置和同轮回复。真机指令均用整段粘贴。本次未测试 Gmail 取件或微信发送。
+- AI 工具：Codex 阅读现有模型、聊天和设备任务代码，实现工具调用及测试，并使用 ADB 完成真机联调。

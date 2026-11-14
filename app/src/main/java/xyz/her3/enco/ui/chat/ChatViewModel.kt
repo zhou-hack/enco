@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -11,9 +12,14 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import xyz.her3.enco.R
+import xyz.her3.enco.core.agent.PhoneTaskKind
 import xyz.her3.enco.core.agent.PhoneTaskRequest
-import xyz.her3.enco.core.agent.PhoneTaskRouter
+import xyz.her3.enco.core.agent.PhoneTaskTool
+import xyz.her3.enco.device.service.PhoneTaskService
+import xyz.her3.enco.device.service.PhoneTaskStatus
 import xyz.her3.enco.llm.ChatClient
 import xyz.her3.enco.llm.ChatException
 import xyz.her3.enco.llm.ChatFailure
@@ -21,6 +27,7 @@ import xyz.her3.enco.llm.ChatMessage
 import xyz.her3.enco.llm.ModelConfig
 import xyz.her3.enco.llm.ModelSettingsStore
 import xyz.her3.enco.llm.chatEndpoint
+import java.util.UUID
 
 internal data class ChatState(
     val model: String = "",
@@ -32,6 +39,7 @@ internal data class ChatState(
     val pending: String = "",
     val loading: Boolean = true,
     val generating: Boolean = false,
+    val phoneTurn: Boolean = false,
     val phoneRequest: PhoneTaskRequest? = null,
     val chatNotice: Int? = null,
     val settingsBusy: Boolean = false,
@@ -46,6 +54,8 @@ internal class ChatViewModel(
     private var config: ModelConfig? = null
     private var responseJob: Job? = null
     private var settingsJob: Job? = null
+    private var conversation = emptyList<ChatMessage>()
+    private var phoneApproval: CompletableDeferred<PhoneApproval>? = null
     private val mutableState = MutableStateFlow(ChatState())
     val state = mutableState.asStateFlow()
 
@@ -71,34 +81,34 @@ internal class ChatViewModel(
         val model = config ?: return
         val current = state.value
         val text = current.draft.trim()
-        if (current.generating || current.phoneRequest != null || text.isEmpty()) return
+        if (current.generating || current.phoneTurn || text.isEmpty()) return
 
         val prompt = ChatMessage("user", text)
-        val history = current.messages + prompt
+        val history = listOf(ChatMessage("system", PhoneTaskTool.prompt)) + conversation + prompt
         mutableState.value = current.copy(draft = "", pending = text, reply = "", generating = true, chatNotice = null)
 
         responseJob =
             viewModelScope.launch {
                 try {
-                    val request = routePhoneTask(model, history)
-                    if (request != null) {
-                        mutableState.update { it.copy(phoneRequest = request) }
+                    val response = client.chat(model, history, allowPhoneTool = true, onText = ::appendReply)
+                    val call = response.toolCalls?.single()
+                    if (call != null) {
+                        val request =
+                            PhoneTaskTool.parse(call.function.name, call.function.arguments)
+                                ?: throw ChatException(ChatFailure.INVALID_RESPONSE)
+                        runPhoneTool(model, history + response, prompt, request, call.id)
                         return@launch
                     }
-                    client.stream(model, listOf(ChatMessage("system", CHAT_ONLY)) + history).collect { chunk ->
-                        mutableState.update { it.copy(reply = it.reply + chunk) }
-                    }
-                    val reply = state.value.reply
-                    mutableState.update {
-                        it.copy(messages = history + ChatMessage("assistant", reply), pending = "", reply = "")
-                    }
+                    conversation += listOf(prompt, response)
+                    finishTurn(prompt, checkNotNull(response.content))
                 } catch (error: CancellationException) {
-                    recoverDraft(text, R.string.chat_stopped)
+                    if (state.value.pending.isNotEmpty()) recoverDraft(text, R.string.chat_stopped)
                     throw error
                 } catch (error: Exception) {
                     recoverDraft(text, error.messageResource(R.string.chat_error))
                 } finally {
-                    mutableState.update { it.copy(generating = false) }
+                    phoneApproval = null
+                    mutableState.update { it.copy(generating = false, phoneTurn = false, phoneRequest = null) }
                 }
             }
     }
@@ -107,37 +117,96 @@ internal class ChatViewModel(
         responseJob?.cancel()
     }
 
-    fun dismissPhoneRequest(
-        restoreDraft: Boolean,
-        notice: Int? = null,
+    fun approvePhoneRequest(
+        request: PhoneTaskRequest,
+        start: (String) -> Boolean,
     ) {
-        mutableState.update { current ->
-            if (current.phoneRequest == null) return@update current
-            current.copy(
-                draft = if (restoreDraft) current.draft.ifBlank { current.pending } else current.draft,
-                pending = "",
-                phoneRequest = null,
-                chatNotice = notice,
-            )
+        val approval = phoneApproval ?: return
+        if (approval.isCompleted || state.value.phoneRequest != request) return
+        val taskId = UUID.randomUUID().toString()
+        val outcome =
+            when {
+                PhoneTaskService.status.value.running -> PhoneApproval.Rejected(R.string.phone_task_busy)
+                start(taskId) -> PhoneApproval.Started(taskId)
+                else -> PhoneApproval.Rejected(R.string.phone_task_error)
+            }
+        approval.complete(outcome)
+        mutableState.update { it.copy(phoneRequest = null) }
+    }
+
+    fun declinePhoneRequest(notice: Int = R.string.phone_task_permission_cancelled) {
+        phoneApproval?.complete(PhoneApproval.Rejected(notice))
+        mutableState.update { it.copy(phoneRequest = null) }
+    }
+
+    private suspend fun runPhoneTool(
+        model: ModelConfig,
+        history: List<ChatMessage>,
+        prompt: ChatMessage,
+        request: PhoneTaskRequest,
+        callId: String,
+    ) {
+        val approval = CompletableDeferred<PhoneApproval>()
+        phoneApproval = approval
+        mutableState.update { it.copy(generating = false, phoneTurn = true, reply = "", phoneRequest = request) }
+        val status =
+            when (val decision = approval.await()) {
+                is PhoneApproval.Started -> {
+                    withTimeoutOrNull(610_000) {
+                        PhoneTaskService.status.first { it.taskId == decision.taskId && !it.running }
+                    } ?: PhoneTaskStatus(R.string.phone_task_result_timeout)
+                }
+
+                is PhoneApproval.Rejected -> {
+                    PhoneTaskStatus(decision.notice)
+                }
+            }
+        val statusText = getApplication<Application>().getString(status.message)
+        val localDetail = status.detail.takeIf { request.kind == PhoneTaskKind.GMAIL_INBOX }.orEmpty()
+        val fallback = localResult(statusText, status.detail)
+        val result =
+            buildJsonObject {
+                put("status", statusText)
+                if (localDetail.isNotBlank()) {
+                    put("details_displayed_on_device", true)
+                } else if (status.detail.isNotBlank()) {
+                    put("detail", status.detail)
+                }
+            }.toString()
+        val toolMessage = ChatMessage("tool", result, toolCallId = callId)
+        val completedHistory = history + toolMessage
+        conversation = completedHistory.drop(1)
+        mutableState.update { it.copy(generating = true) }
+        try {
+            val answer = client.chat(model, completedHistory, allowPhoneTool = false, onText = ::appendReply)
+            conversation += answer
+            finishTurn(prompt, localResult(checkNotNull(answer.content), localDetail))
+        } catch (error: CancellationException) {
+            finishTurn(prompt, fallback)
+            throw error
+        } catch (error: ChatException) {
+            mutableState.update { it.copy(chatNotice = error.messageResource(R.string.chat_error)) }
+            finishTurn(prompt, fallback)
         }
     }
 
-    private suspend fun routePhoneTask(
-        model: ModelConfig,
-        history: List<ChatMessage>,
-    ): PhoneTaskRequest? =
-        withTimeoutOrNull(15_000) {
-            val decision = StringBuilder()
-            try {
-                client.stream(model, listOf(ChatMessage("system", PhoneTaskRouter.prompt)) + history.takeLast(9)).collect { chunk ->
-                    if (decision.length < 2_048) decision.append(chunk.take(2_048 - decision.length))
-                }
-            } catch (error: ChatException) {
-                if (error.reason != ChatFailure.INVALID_RESPONSE && error.reason != ChatFailure.EMPTY_RESPONSE) throw error
-                return@withTimeoutOrNull null
-            }
-            if (decision.length == 2_048) null else PhoneTaskRouter.parse(decision.toString())
+    private fun localResult(
+        summary: String,
+        detail: String,
+    ): String = if (detail.isBlank()) summary else "$summary\n\n$detail"
+
+    private fun appendReply(chunk: String) {
+        mutableState.update { it.copy(reply = it.reply + chunk) }
+    }
+
+    private fun finishTurn(
+        prompt: ChatMessage,
+        reply: String,
+    ) {
+        mutableState.update {
+            it.copy(messages = it.messages + listOf(prompt, ChatMessage("assistant", reply)), pending = "", reply = "")
         }
+    }
 
     fun clearSettingsNotice() {
         mutableState.update { it.copy(settingsNotice = null) }
@@ -169,10 +238,15 @@ internal class ChatViewModel(
                 try {
                     if (testOnly) {
                         client
-                            .stream(
+                            .chat(
                                 next,
-                                listOf(ChatMessage("user", getApplication<Application>().getString(R.string.model_test_prompt))),
-                            ).first()
+                                listOf(
+                                    ChatMessage("system", PhoneTaskTool.prompt),
+                                    ChatMessage("user", getApplication<Application>().getString(R.string.model_test_prompt)),
+                                ),
+                                allowPhoneTool = true,
+                                onText = {},
+                            ).also { if (it.toolCalls != null) throw ChatException(ChatFailure.INVALID_RESPONSE) }
                         mutableState.update { it.copy(settingsNotice = R.string.model_test_success) }
                     } else {
                         settings.save(next)
@@ -191,6 +265,7 @@ internal class ChatViewModel(
 
     private fun setConfig(next: ModelConfig) {
         val endpointChanged = config?.let { it.endpoint != next.endpoint } == true
+        if (endpointChanged) conversation = emptyList()
         config = next
         mutableState.update {
             val chat = if (endpointChanged) it.copy(messages = emptyList(), pending = "", reply = "", chatNotice = null) else it
@@ -212,8 +287,14 @@ internal class ChatViewModel(
         }
     }
 
-    private companion object {
-        const val CHAT_ONLY = "直接回复用户。此轮为普通聊天，你不能实际操作手机，不能声称已替用户操作。"
+    private sealed interface PhoneApproval {
+        data class Started(
+            val taskId: String,
+        ) : PhoneApproval
+
+        data class Rejected(
+            val notice: Int,
+        ) : PhoneApproval
     }
 }
 

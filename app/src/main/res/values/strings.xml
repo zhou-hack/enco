@@ -18,7 +18,7 @@
     <string name="phone_task_reply">模型连续返回了无效动作，任务已停止。</string>
     <string name="phone_task_stalled">画面连续没有变化，任务已停止。</string>
     <string name="phone_task_limit">达到任务步数或时间上限。</string>
-    <string name="phone_task_goal_length">请将任务缩短到 500 字以内后重试。</string>
+    <string name="phone_task_result_timeout">未收到手机任务的结束状态，请查看手机确认结果。</string>
     <string name="phone_task_busy">请等待当前手机任务完成，或先停止它。</string>
     <string name="phone_task_error">任务中断，请检查 Shizuku 和模型连接。</string>
     <string name="phone_task_model_required">请先保存模型设置。</string>

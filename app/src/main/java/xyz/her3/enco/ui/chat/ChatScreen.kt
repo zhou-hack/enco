@@ -63,8 +63,8 @@ internal fun ChatScreen(
     val colors = LocalEncoColors.current
     val list = rememberLazyListState()
     val showPending = state.pending.isNotEmpty()
-    LaunchedEffect(state.messages.size, state.pending, task.detail) {
-        if (state.messages.isNotEmpty() || showPending || task.detail.isNotBlank()) list.scrollToItem(0)
+    LaunchedEffect(state.messages.size, state.pending) {
+        if (state.messages.isNotEmpty() || showPending) list.scrollToItem(0)
     }
 
     ChatPage {
@@ -80,7 +80,7 @@ internal fun ChatScreen(
                         .widthIn(max = 176.dp)
                         .clip(CircleShape)
                         .background(colors.panel)
-                        .clickable(enabled = !state.generating, role = Role.Button, onClick = onModelSettings)
+                        .clickable(enabled = !state.generating && !state.phoneTurn, role = Role.Button, onClick = onModelSettings)
                         .heightIn(min = 48.dp)
                         .padding(horizontal = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -99,7 +99,7 @@ internal fun ChatScreen(
         }
 
         Box(Modifier.weight(1f).fillMaxWidth()) {
-            if (state.messages.isEmpty() && !showPending && task.detail.isBlank()) {
+            if (state.messages.isEmpty() && !showPending) {
                 Column(
                     modifier = Modifier.align(Alignment.Center).padding(bottom = 30.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -125,7 +125,6 @@ internal fun ChatScreen(
                     verticalArrangement = Arrangement.spacedBy(18.dp),
                     contentPadding = PaddingValues(vertical = 12.dp),
                 ) {
-                    if (task.detail.isNotBlank()) item { ChatBubble(task.detail, user = false) }
                     if (showPending) {
                         if (state.reply.isNotEmpty()) {
                             item { ChatBubble(state.reply, user = false) }
@@ -139,7 +138,7 @@ internal fun ChatScreen(
                         }
                     }
                     items(state.messages.asReversed()) { message ->
-                        ChatBubble(message.content, user = message.role == "user")
+                        ChatBubble(message.content.orEmpty(), user = message.role == "user")
                     }
                 }
             }
@@ -187,7 +186,7 @@ internal fun ChatScreen(
                     ControlSymbol.SEND,
                     R.string.chat_send,
                     primary = true,
-                    enabled = state.draft.isNotBlank() && !state.loading,
+                    enabled = state.draft.isNotBlank() && !state.loading && !state.phoneTurn,
                     onClick = if (state.model.isBlank()) onModelSettings else onSend,
                 )
             }

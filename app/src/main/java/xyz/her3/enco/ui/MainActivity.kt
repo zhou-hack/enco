@@ -30,7 +30,6 @@ import xyz.her3.enco.R
 import xyz.her3.enco.core.agent.PhoneTaskKind
 import xyz.her3.enco.core.agent.PhoneTaskPermission
 import xyz.her3.enco.core.agent.PhoneTaskRequest
-import xyz.her3.enco.core.agent.PhoneTaskRouter
 import xyz.her3.enco.device.overlay.PhoneTaskOverlayService
 import xyz.her3.enco.device.service.PhoneTaskReview
 import xyz.her3.enco.device.service.PhoneTaskService
@@ -61,11 +60,11 @@ class MainActivity : ComponentActivity() {
                 val state by chat.state.collectAsState()
                 val task by PhoneTaskService.status.collectAsState()
                 val runTask: (ApprovedTask) -> Unit = { approved ->
-                    chat.dismissPhoneRequest(restoreDraft = !startPhoneTask(approved))
+                    chat.approvePhoneRequest(approved.request) { taskId -> startPhoneTask(approved, taskId) }
                 }
                 val back = {
                     if (page == Page.MODELS) chat.cancelSettingsAction()
-                    if (waitingForShizuku != null) chat.dismissPhoneRequest(restoreDraft = true)
+                    if (waitingForShizuku != null) chat.declinePhoneRequest()
                     waitingForShizuku = null
                     page = Page.CHAT
                 }
@@ -129,7 +128,7 @@ class MainActivity : ComponentActivity() {
                             onRetry = { ShizukuConnection.refresh(requestPermission = true) },
                             onOpenScreenControl = ::openScreenControl,
                             task = task,
-                            modelReady = state.model.isNotBlank() && !state.generating && state.phoneRequest == null,
+                            modelReady = state.model.isNotBlank() && !state.generating && !state.phoneTurn,
                             onStartTask = {
                                 page = Page.CHAT
                                 chat.editDraft(it)
@@ -143,7 +142,7 @@ class MainActivity : ComponentActivity() {
                 if (request != null && waitingForShizuku == null && !state.generating) {
                     if (task.running) {
                         LaunchedEffect(request) {
-                            chat.dismissPhoneRequest(restoreDraft = true, notice = R.string.phone_task_busy)
+                            chat.declinePhoneRequest(R.string.phone_task_busy)
                         }
                     } else {
                         PhoneTaskPermissionDialog(
@@ -158,7 +157,7 @@ class MainActivity : ComponentActivity() {
                                     request.goal,
                                 ),
                             onEnableOverlay = if (overlayAllowed) null else ::openOverlaySettings,
-                            onCancel = { chat.dismissPhoneRequest(restoreDraft = true, notice = R.string.phone_task_permission_cancelled) },
+                            onCancel = { chat.declinePhoneRequest() },
                             onAllow = { permission ->
                                 val approved = ApprovedTask(request, permission)
                                 if (ShizukuConnection.status.value == ShizukuStatus.CONNECTED) {
@@ -208,18 +207,17 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun startPhoneTask(approved: ApprovedTask): Boolean {
-        if (PhoneTaskService.status.value.running) return false
+    private fun startPhoneTask(
+        approved: ApprovedTask,
+        taskId: String,
+    ): Boolean {
         val (kind, goal) = approved.request
-        if (goal.length > PhoneTaskRouter.MAX_GOAL_LENGTH) {
-            Toast.makeText(this, R.string.phone_task_goal_length, Toast.LENGTH_LONG).show()
-            return false
-        }
         try {
             stopService(Intent(this, ScreenControlService::class.java))
             PhoneTaskOverlayService.startIfAllowed(this)
             startForegroundService(
                 Intent(this, PhoneTaskService::class.java)
+                    .putExtra(PhoneTaskService.TASK_ID, taskId)
                     .putExtra(PhoneTaskService.GOAL, goal)
                     .putExtra(PhoneTaskService.KIND, kind.name)
                     .putExtra(PhoneTaskService.PERMISSION, approved.permission.name),

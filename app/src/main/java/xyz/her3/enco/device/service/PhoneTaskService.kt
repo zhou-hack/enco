@@ -33,7 +33,7 @@ import xyz.her3.enco.R
 import xyz.her3.enco.core.agent.PhoneOperator
 import xyz.her3.enco.core.agent.PhoneTaskKind
 import xyz.her3.enco.core.agent.PhoneTaskPermission
-import xyz.her3.enco.core.agent.PhoneTaskRouter
+import xyz.her3.enco.core.agent.PhoneTaskTool
 import xyz.her3.enco.core.agent.TaskResult
 import xyz.her3.enco.core.agent.VisionAction
 import xyz.her3.enco.core.agent.WeChatDraft
@@ -59,6 +59,7 @@ internal data class PhoneTaskStatus(
     val running: Boolean = false,
     val review: PhoneTaskReview? = null,
     val progress: PhoneTaskProgress? = null,
+    val taskId: String? = null,
 )
 
 internal data class PhoneTaskProgress(
@@ -82,6 +83,7 @@ internal sealed interface PhoneTaskReview {
 class PhoneTaskService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var job: Job? = null
+    private var taskId: String? = null
     private var appLabel = R.string.phone_task_app_settings
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -96,10 +98,12 @@ class PhoneTaskService : Service() {
             return START_NOT_STICKY
         }
         if (job?.isActive == true) return START_NOT_STICKY
+        taskId = intent?.getStringExtra(TASK_ID)
         val goal = intent?.getStringExtra(GOAL)?.trim()
         val kind = intent?.getStringExtra(KIND)?.let { value -> PhoneTaskKind.entries.find { it.name == value } }
         val permission = intent?.getStringExtra(PERMISSION)?.let { value -> PhoneTaskPermission.entries.find { it.name == value } }
-        if (goal.isNullOrEmpty() || goal.length > PhoneTaskRouter.MAX_GOAL_LENGTH || kind == null || permission == null) {
+        if (goal == null || !PhoneTaskTool.validGoal(goal) || kind == null || permission == null) {
+            update(PhoneTaskStatus(R.string.phone_task_error))
             stopSelf()
             return START_NOT_STICKY
         }
@@ -642,12 +646,12 @@ class PhoneTaskService : Service() {
 
     private fun cancelTask() {
         job?.cancel()
-        if (status.value.running) update(PhoneTaskStatus(R.string.phone_task_stopped))
+        if (status.value.running && status.value.taskId == taskId) update(PhoneTaskStatus(R.string.phone_task_stopped))
         stopSelf()
     }
 
     override fun onDestroy() {
-        if (status.value.running) update(PhoneTaskStatus(R.string.phone_task_stopped))
+        if (status.value.running && status.value.taskId == taskId) update(PhoneTaskStatus(R.string.phone_task_stopped))
         scope.cancel()
         super.onDestroy()
     }
@@ -687,6 +691,7 @@ class PhoneTaskService : Service() {
     }
 
     companion object {
+        internal const val TASK_ID = "task_id"
         internal const val GOAL = "goal"
         internal const val KIND = "kind"
         internal const val PERMISSION = "permission"
@@ -703,10 +708,10 @@ class PhoneTaskService : Service() {
         internal fun answerTap(allow: Boolean) {
             pendingTap?.complete(allow)
         }
+    }
 
-        private fun update(state: PhoneTaskStatus) {
-            mutableStatus.value = state
-        }
+    private fun update(state: PhoneTaskStatus) {
+        mutableStatus.value = state.copy(taskId = taskId)
     }
 }
 
