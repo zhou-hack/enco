@@ -18,6 +18,7 @@ import android.view.View
 import android.view.WindowInsets
 import android.view.WindowManager
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -32,6 +33,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -40,7 +42,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathMeasure
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
@@ -76,6 +85,7 @@ internal class PhoneTaskOverlay(
     private val contentOwner = OverlayContentOwner()
     private val view = ComposeView(context)
     private var status by mutableStateOf(PhoneTaskStatus(R.string.phone_task_idle))
+    private var visible by mutableStateOf(false)
     private var dismissed = false
     private var capturing = false
     private var receiverRegistered = false
@@ -119,12 +129,18 @@ internal class PhoneTaskOverlay(
         }
         view.setContent {
             EncoTheme {
-                PhoneTaskIsland(
-                    status = status,
-                    onOpen = onOpen,
-                    onStop = onStop,
-                    onDismiss = onDismiss,
-                )
+                if (visible) {
+                    if (status.completed) {
+                        CompletedTaskPill(onDismiss)
+                    } else {
+                        PhoneTaskIsland(
+                            status = status,
+                            onOpen = onOpen,
+                            onStop = onStop,
+                            onDismiss = onDismiss,
+                        )
+                    }
+                }
             }
         }
         windowManager.addView(view, params)
@@ -144,7 +160,7 @@ internal class PhoneTaskOverlay(
     }
 
     fun render(status: PhoneTaskStatus) {
-        if (status.running) dismissed = false
+        if (status.running || status.taskId != this.status.taskId) dismissed = false
         this.status = status
         refreshVisibility()
     }
@@ -171,6 +187,7 @@ internal class PhoneTaskOverlay(
                 !capturing &&
                 unlocked &&
                 Settings.canDrawOverlays(context)
+        visible = show
         view.visibility = if (show) View.VISIBLE else View.INVISIBLE
         val alpha = if (show) 1f else 0f
         if (params.alpha != alpha) {
@@ -191,6 +208,65 @@ internal class PhoneTaskOverlay(
             }
         }
         contentOwner.close()
+    }
+}
+
+@Composable
+private fun CompletedTaskPill(onDismiss: () -> Unit) {
+    val colors = LocalEncoColors.current
+    val green = colors.positive
+    val orbit =
+        rememberInfiniteTransition(label = "completionBorder").animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(tween(1600, easing = LinearEasing)),
+            label = "completionHighlight",
+        )
+    Row(
+        modifier =
+            Modifier
+                .widthIn(min = 112.dp)
+                .height(42.dp)
+                .clip(CircleShape)
+                .background(colors.panel)
+                .drawWithCache {
+                    val inset = 1.5.dp.toPx()
+                    val outline =
+                        Path().apply {
+                            addRoundRect(
+                                RoundRect(inset, inset, size.width - inset, size.height - inset, CornerRadius(size.height / 2 - inset)),
+                            )
+                        }
+                    val measure = PathMeasure().apply { setPath(outline, forceClosed = true) }
+                    val highlight = Path()
+                    val trackStroke = Stroke(1.dp.toPx())
+                    val lightStroke = Stroke(2.dp.toPx(), cap = StrokeCap.Round)
+                    onDrawWithContent {
+                        drawContent()
+                        drawPath(outline, green.copy(alpha = 0.4f), style = trackStroke)
+                        val length = measure.length
+                        val start = orbit.value * length
+                        val end = start + length * 0.24f
+                        highlight.reset()
+                        measure.getSegment(start, end.coerceAtMost(length), highlight)
+                        if (end > length) measure.getSegment(0f, end - length, highlight)
+                        drawPath(highlight, green, style = lightStroke)
+                    }
+                }.clickable(
+                    role = Role.Button,
+                    onClickLabel = stringResource(R.string.phone_task_overlay_dismiss),
+                    onClick = onDismiss,
+                ).padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ControlIcon(ControlSymbol.CHECK, Modifier.size(16.dp), green)
+        EncoText(
+            stringResource(R.string.phone_task_overlay_completed),
+            Modifier.padding(start = 7.dp),
+            color = colors.text,
+            size = 13.sp,
+            weight = FontWeight.SemiBold,
+        )
     }
 }
 
@@ -250,11 +326,7 @@ private fun PhoneTaskIsland(
         ) {
             EncoMark(colors.accent, colors.onAccent)
             EncoText(
-                if (status.message == R.string.phone_task_finished) {
-                    stringResource(R.string.phone_task_overlay_completed)
-                } else {
-                    status.statusText()
-                },
+                status.statusText(),
                 Modifier
                     .weight(1f)
                     .padding(start = 9.dp),
@@ -282,7 +354,6 @@ private fun taskAccent(status: PhoneTaskStatus): Color {
     val colors = LocalEncoColors.current
     return when {
         status.review != null -> colors.warning
-        !status.running && status.message == R.string.phone_task_finished -> colors.positive
         !status.running && status.message == R.string.phone_task_stopped -> colors.muted
         !status.running -> colors.error
         else -> colors.accent

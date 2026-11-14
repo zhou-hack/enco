@@ -7,7 +7,9 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.Color
 import android.os.IBinder
+import android.provider.Settings
 import android.util.Base64
 import android.util.Log
 import android.widget.Toast
@@ -60,7 +62,9 @@ internal data class PhoneTaskStatus(
     val review: PhoneTaskReview? = null,
     val progress: PhoneTaskProgress? = null,
     val taskId: String? = null,
-)
+) {
+    val completed: Boolean get() = !running && message == R.string.phone_task_finished
+}
 
 internal data class PhoneTaskProgress(
     val app: Int,
@@ -205,7 +209,9 @@ class PhoneTaskService : Service() {
                                 }
                             }
                         }
-                    update(result ?: PhoneTaskStatus(R.string.phone_task_limit))
+                    val finalStatus = result ?: PhoneTaskStatus(R.string.phone_task_limit)
+                    update(finalStatus)
+                    if (finalStatus.completed) showCompletion(kind)
                 } catch (error: CancellationException) {
                     throw error
                 } catch (error: Exception) {
@@ -245,10 +251,9 @@ class PhoneTaskService : Service() {
                 ?.toIntOrNull()
                 ?.coerceIn(1, 20) ?: 10
         val rows =
-            PhoneTaskOverlayService
-                .withoutOverlay {
-                    ShizukuConnection.withScreenService { it.readGmailInbox(count) }
-                }?.asList()
+            ShizukuConnection
+                .withScreenService { it.readGmailInbox(count) }
+                ?.asList()
                 ?.chunked(3)
                 .orEmpty()
         if (rows.isEmpty()) return PhoneTaskStatus(R.string.phone_task_gmail_unavailable)
@@ -659,6 +664,35 @@ class PhoneTaskService : Service() {
     private fun taskActivityIntent(): Intent =
         Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
 
+    private fun showCompletion(kind: PhoneTaskKind) {
+        // 系统设置可以隐藏第三方悬浮窗，完成提示需要走系统界面。
+        if (kind != PhoneTaskKind.SETTINGS && Settings.canDrawOverlays(this)) return
+        val manager = getSystemService(NotificationManager::class.java)
+        val title = getString(R.string.phone_task_overlay_completed)
+        manager.createNotificationChannel(
+            NotificationChannel(COMPLETION_CHANNEL, title, NotificationManager.IMPORTANCE_HIGH).apply {
+                setSound(null, null)
+                setShowBadge(false)
+            },
+        )
+        if (!manager.areNotificationsEnabled() ||
+            (manager.getNotificationChannel(COMPLETION_CHANNEL)?.importance ?: 0) < NotificationManager.IMPORTANCE_HIGH
+        ) {
+            Toast.makeText(this, title, Toast.LENGTH_SHORT).show()
+            return
+        }
+        manager.notify(
+            COMPLETION_NOTIFICATION,
+            Notification
+                .Builder(this, COMPLETION_CHANNEL)
+                .setSmallIcon(android.R.drawable.checkbox_on_background)
+                .setColor(Color.rgb(60, 167, 115))
+                .setContentTitle(title)
+                .setTimeoutAfter(5_000)
+                .build(),
+        )
+    }
+
     private fun notification(state: PhoneTaskStatus): Notification {
         val stop =
             PendingIntent.getService(
@@ -699,6 +733,8 @@ class PhoneTaskService : Service() {
         private const val STOP = "xyz.her3.enco.action.STOP_PHONE_TASK"
         private const val CHANNEL = "phone_task"
         private const val NOTIFICATION = 2
+        private const val COMPLETION_CHANNEL = "phone_task_completion"
+        private const val COMPLETION_NOTIFICATION = 4
         private val brightnessGoal = Regex("亮度|brightness", RegexOption.IGNORE_CASE)
         private val bluetoothGoal = Regex("蓝牙|藍牙|bluetooth", RegexOption.IGNORE_CASE)
         private val mutableStatus = MutableStateFlow(PhoneTaskStatus(R.string.phone_task_idle))

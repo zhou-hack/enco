@@ -21,6 +21,7 @@ internal enum class ControlSymbol {
     BACK,
     HOME,
     CLOSE,
+    CHECK,
     NEXT,
     CHAT,
     SEND,
@@ -114,6 +115,11 @@ internal fun ControlIcon(
             ControlSymbol.CLOSE -> {
                 line(6, 6, 18, 18)
                 line(6, 18, 18, 6)
+            }
+
+            ControlSymbol.CHECK -> {
+                line(5, 12, 10, 17)
+                line(10, 17, 19, 7)
             }
 
             ControlSymbol.NEXT -> {
