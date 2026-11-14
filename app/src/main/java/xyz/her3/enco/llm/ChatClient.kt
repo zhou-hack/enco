@@ -24,6 +24,8 @@ import okhttp3.Response
 import okhttp3.sse.EventSource
 import okhttp3.sse.EventSourceListener
 import okhttp3.sse.EventSources
+import xyz.her3.enco.core.api.LlmMessage
+import xyz.her3.enco.core.api.LlmPart
 import xyz.her3.enco.core.protocol.encoJson
 import java.io.IOException
 import java.net.SocketTimeoutException
@@ -94,6 +96,42 @@ internal class ChatClient(
             config,
             messages.map {
                 RequestMessage(it.role, JsonPrimitive(it.content))
+            },
+        )
+
+    fun streamLlm(
+        config: ModelConfig,
+        messages: List<LlmMessage>,
+    ): Flow<String> =
+        streamRequest(
+            config,
+            messages.map { message ->
+                val content =
+                    (message.parts.singleOrNull() as? LlmPart.Text)?.let { JsonPrimitive(it.text) }
+                        ?: buildJsonArray {
+                            message.parts.forEach { part ->
+                                when (part) {
+                                    is LlmPart.Text -> {
+                                        add(
+                                            buildJsonObject {
+                                                put("type", "text")
+                                                put("text", part.text)
+                                            },
+                                        )
+                                    }
+
+                                    is LlmPart.Image -> {
+                                        add(
+                                            buildJsonObject {
+                                                put("type", "image_url")
+                                                put("image_url", buildJsonObject { put("url", part.url) })
+                                            },
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                RequestMessage(message.role.name.lowercase(), content)
             },
         )
 
