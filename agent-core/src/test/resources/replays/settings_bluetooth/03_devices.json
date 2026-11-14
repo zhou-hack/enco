@@ -1,0 +1,32 @@
+{
+  "frameId": 3,
+  "stageWidth": 1000,
+  "stageHeight": 2000,
+  "packageName": "com.android.settings",
+  "rawNodes": [
+    {
+      "nodePath": [0],
+      "bounds": { "left": 0, "top": 0, "right": 1000, "bottom": 2000 },
+      "packageName": "com.android.settings"
+    },
+    {
+      "nodePath": [0, 0],
+      "bounds": { "left": 40, "top": 30, "right": 300, "bottom": 100 },
+      "packageName": "com.android.settings",
+      "text": "蓝牙"
+    },
+    {
+      "nodePath": [0, 1],
+      "bounds": { "left": 0, "top": 400, "right": 1000, "bottom": 1800 },
+      "packageName": "com.android.settings",
+      "contentDescription": "蓝牙设备列表",
+      "canScrollBackward": true
+    },
+    {
+      "nodePath": [0, 1, 0],
+      "bounds": { "left": 40, "top": 450, "right": 500, "bottom": 550 },
+      "packageName": "com.android.settings",
+      "text": "我的耳机"
+    }
+  ]
+}

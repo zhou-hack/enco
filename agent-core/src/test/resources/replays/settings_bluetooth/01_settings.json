@@ -1,0 +1,33 @@
+{
+  "frameId": 1,
+  "stageWidth": 1000,
+  "stageHeight": 2000,
+  "packageName": "com.android.settings",
+  "rawNodes": [
+    {
+      "nodePath": [0],
+      "bounds": { "left": 0, "top": 0, "right": 1000, "bottom": 2000 },
+      "packageName": "com.android.settings",
+      "className": "android.widget.FrameLayout"
+    },
+    {
+      "nodePath": [0, 0],
+      "bounds": { "left": 40, "top": 30, "right": 300, "bottom": 100 },
+      "packageName": "com.android.settings",
+      "text": "设置"
+    },
+    {
+      "nodePath": [0, 1],
+      "bounds": { "left": 0, "top": 200, "right": 1000, "bottom": 300 },
+      "packageName": "com.android.settings",
+      "contentDescription": "蓝牙",
+      "canTap": true
+    },
+    {
+      "nodePath": [0, 1, 0],
+      "bounds": { "left": 0, "top": 200, "right": 1000, "bottom": 300 },
+      "packageName": "com.android.settings",
+      "text": "蓝牙"
+    }
+  ]
+}
