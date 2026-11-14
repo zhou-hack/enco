@@ -7,33 +7,14 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.intOrNull
 import xyz.her3.enco.core.protocol.encoJson
 
-enum class PhoneTaskKind { SETTINGS, WECHAT_NAVIGATION, WECHAT_MESSAGE }
-
-private val weChatName = Regex("微信|wechat", RegexOption.IGNORE_CASE)
-private val messageRequest = Regex("发送|發送|发个|發個|发条|發條|发一条|發一條|发消息|發消息|发信息|發信息|发讯息|發訊息|传送|傳送|\\bsend\\b", RegexOption.IGNORE_CASE)
-private val phoneRequest =
-    Regex(
-        "^(?:(?:请|請|帮我|幫我|替我|你能|能不能|让你|讓你)\\s*)*(?:打开|打開|进入|進入|去|用|在|[给給](?!我解释|我解釋|我介绍|我介紹)|发|發|查看)|^(?:please\\s+)?(?:open|go to|send|launch)\\b",
-        RegexOption.IGNORE_CASE,
-    )
-private val settingsName = Regex("设置|設定|蓝牙|藍牙|亮度|\\bsettings\\b|\\bbluetooth\\b", RegexOption.IGNORE_CASE)
-
-fun isPhoneTaskRequest(goal: String): Boolean =
-    phoneRequest.containsMatchIn(goal.trim()) && (weChatName.containsMatchIn(goal) || settingsName.containsMatchIn(goal))
-
-fun phoneTaskKind(goal: String): PhoneTaskKind {
-    if (!weChatName.containsMatchIn(goal)) return PhoneTaskKind.SETTINGS
-    return if (messageRequest.containsMatchIn(goal) || Regex("[给給].{1,50}[发發]").containsMatchIn(goal)) {
-        PhoneTaskKind.WECHAT_MESSAGE
-    } else {
-        PhoneTaskKind.WECHAT_NAVIGATION
-    }
-}
-
 data class WeChatDraft(
     val recipient: String,
     val message: String,
 )
+
+enum class WeChatTapDecision { EXECUTE, CONFIRM, TAKE_OVER }
+
+enum class WeChatTapReview { NAVIGATION, UNCERTAIN, TAKE_OVER }
 
 sealed interface VisionAction {
     data class Tap(
@@ -57,14 +38,57 @@ sealed interface VisionAction {
 object WeChatTask {
     val draftPrompt: String = prompt("wechat-draft")
     val visionPrompt: String = prompt("wechat-vision")
+    val tapGuardPrompt: String = prompt("wechat-tap-guard")
 
     private val takeover =
         Regex(
-            "密码|密碼|验证码|驗證碼|付款|支付|转账|轉帳|红包|紅包|发送|發送|傳送|删除|刪除|提交|授权|授權|password|verification code|payment|transfer money|\\bsend\\b|\\bdelete\\b|\\bsubmit\\b",
+            "密码|密碼|验证码|驗證碼|付款|支付|转账|轉帳|红包|紅包|发送|發送|傳送|删除|刪除|提交|授权|授權|password|passcode|verification code|payment|transfer money|\\bsend\\b|\\bdelete\\b|\\bsubmit\\b",
             RegexOption.IGNORE_CASE,
         )
 
     fun needsManualAction(label: String): Boolean = takeover.containsMatchIn(label)
+
+    private val navigationLabels =
+        setOf(
+            "微信",
+            "通讯录",
+            "通訊錄",
+            "发现",
+            "發現",
+            "我",
+            "搜索",
+            "搜尋",
+            "返回",
+            "wechat",
+            "chats",
+            "contacts",
+            "discover",
+            "me",
+            "search",
+            "back",
+        )
+
+    suspend fun tapDecision(
+        permission: PhoneTaskPermission,
+        action: VisionAction.Tap,
+        review: suspend () -> WeChatTapReview,
+    ): WeChatTapDecision {
+        if (needsManualAction(action.label)) return WeChatTapDecision.TAKE_OVER
+        val checked = review()
+        return when {
+            checked == WeChatTapReview.TAKE_OVER -> WeChatTapDecision.TAKE_OVER
+            checked == WeChatTapReview.NAVIGATION && action.label.trim().lowercase() in navigationLabels -> WeChatTapDecision.EXECUTE
+            permission == PhoneTaskPermission.IMPORTANT_ONLY -> WeChatTapDecision.CONFIRM
+            else -> WeChatTapDecision.TAKE_OVER
+        }
+    }
+
+    fun parseTapReview(reply: String): WeChatTapReview =
+        when (parse(reply)?.text("decision", 20)) {
+            "navigation" -> WeChatTapReview.NAVIGATION
+            "uncertain" -> WeChatTapReview.UNCERTAIN
+            else -> WeChatTapReview.TAKE_OVER
+        }
 
     fun parseDraft(reply: String): WeChatDraft? {
         val fields = parse(reply) ?: return null

@@ -1,5 +1,6 @@
 package xyz.her3.enco.core.agent
 
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -8,14 +9,31 @@ import org.junit.Test
 
 class WeChatTaskTest {
     @Test
-    fun routesPhoneCommandsWithoutRoutingHowToQuestions() {
-        assertTrue(isPhoneTaskRequest("帮我打开蓝牙设置"))
-        assertTrue(isPhoneTaskRequest("去微信给张三发个信息"))
-        assertFalse(isPhoneTaskRequest("如何打开微信？"))
-        assertFalse(isPhoneTaskRequest("给我解释一下微信"))
-        assertEquals(PhoneTaskKind.WECHAT_MESSAGE, phoneTaskKind("在微信给张三发：明天见"))
-        assertEquals(PhoneTaskKind.WECHAT_NAVIGATION, phoneTaskKind("打开微信发现页"))
-    }
+    fun permissionOnlySkipsReviewForVerifiedNavigation() =
+        runBlocking {
+            val search = VisionAction.Tap(800, 100, "搜索")
+            for (permission in PhoneTaskPermission.entries) {
+                assertEquals(WeChatTapDecision.EXECUTE, WeChatTask.tapDecision(permission, search) { WeChatTapReview.NAVIGATION })
+                assertEquals(
+                    WeChatTapDecision.TAKE_OVER,
+                    WeChatTask.tapDecision(permission, search) { WeChatTapReview.TAKE_OVER },
+                )
+                assertEquals(
+                    WeChatTapDecision.TAKE_OVER,
+                    WeChatTask.tapDecision(permission, search.copy(label = "付款")) { error("付款必须接管") },
+                )
+            }
+            assertEquals(
+                WeChatTapDecision.CONFIRM,
+                WeChatTask.tapDecision(PhoneTaskPermission.IMPORTANT_ONLY, search) { WeChatTapReview.UNCERTAIN },
+            )
+            assertEquals(
+                WeChatTapDecision.TAKE_OVER,
+                WeChatTask.tapDecision(PhoneTaskPermission.FULL, search) { WeChatTapReview.UNCERTAIN },
+            )
+            assertEquals(WeChatTapReview.TAKE_OVER, WeChatTask.parseTapReview("""{"decision":true}"""))
+            assertEquals(WeChatTapReview.NAVIGATION, WeChatTask.parseTapReview("""{"decision":"navigation"}"""))
+        }
 
     @Test
     fun onlyAcceptsBoundedVisionActions() {

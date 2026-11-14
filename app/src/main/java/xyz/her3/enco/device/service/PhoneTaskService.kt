@@ -29,11 +29,14 @@ import kotlinx.coroutines.withTimeoutOrNull
 import xyz.her3.enco.R
 import xyz.her3.enco.core.agent.PhoneOperator
 import xyz.her3.enco.core.agent.PhoneTaskKind
+import xyz.her3.enco.core.agent.PhoneTaskPermission
+import xyz.her3.enco.core.agent.PhoneTaskRouter
 import xyz.her3.enco.core.agent.TaskResult
 import xyz.her3.enco.core.agent.VisionAction
 import xyz.her3.enco.core.agent.WeChatDraft
+import xyz.her3.enco.core.agent.WeChatTapDecision
+import xyz.her3.enco.core.agent.WeChatTapReview
 import xyz.her3.enco.core.agent.WeChatTask
-import xyz.her3.enco.core.agent.phoneTaskKind
 import xyz.her3.enco.device.overlay.PhoneTaskOverlay
 import xyz.her3.enco.device.shizuku.ShizukuConnection
 import xyz.her3.enco.llm.ChatClient
@@ -63,6 +66,7 @@ internal data class PhoneTaskProgress(
 internal sealed interface PhoneTaskReview {
     data class Draft(
         val draft: WeChatDraft,
+        val openDirectly: Boolean,
     ) : PhoneTaskReview
 
     data class Tap(
@@ -90,12 +94,13 @@ class PhoneTaskService : Service() {
         }
         if (job?.isActive == true) return START_NOT_STICKY
         val goal = intent?.getStringExtra(GOAL)?.trim()
-        if (goal.isNullOrEmpty() || goal.length > MAX_GOAL_LENGTH) {
+        val kind = intent?.getStringExtra(KIND)?.let { value -> PhoneTaskKind.entries.find { it.name == value } }
+        val permission = intent?.getStringExtra(PERMISSION)?.let { value -> PhoneTaskPermission.entries.find { it.name == value } }
+        if (goal.isNullOrEmpty() || goal.length > PhoneTaskRouter.MAX_GOAL_LENGTH || kind == null || permission == null) {
             stopSelf()
             return START_NOT_STICKY
         }
 
-        val kind = phoneTaskKind(goal)
         appLabel = if (kind == PhoneTaskKind.SETTINGS) R.string.phone_task_app_settings else R.string.phone_task_app_wechat
         val initialPhase =
             when (kind) {
@@ -123,11 +128,11 @@ class PhoneTaskService : Service() {
                         withTimeoutOrNull(600_000) {
                             when (kind) {
                                 PhoneTaskKind.WECHAT_MESSAGE -> {
-                                    prepareDraft(goal, client, config)
+                                    prepareDraft(goal, client, config, permission)
                                 }
 
                                 PhoneTaskKind.WECHAT_NAVIGATION -> {
-                                    runVision(goal, client, config)
+                                    runVision(goal, client, config, permission)
                                 }
 
                                 PhoneTaskKind.SETTINGS -> {
@@ -188,6 +193,7 @@ class PhoneTaskService : Service() {
         goal: String,
         client: ChatClient,
         config: ModelConfig,
+        permission: PhoneTaskPermission,
     ): PhoneTaskStatus {
         showStep(1, R.string.phone_task_phase_edit_message)
         val reply =
@@ -201,13 +207,18 @@ class PhoneTaskService : Service() {
                 ),
             )
         val draft = WeChatTask.parseDraft(reply) ?: return PhoneTaskStatus(R.string.phone_task_draft_missing)
-        return PhoneTaskStatus(R.string.phone_task_draft_ready, review = PhoneTaskReview.Draft(draft))
+        val openDirectly = permission == PhoneTaskPermission.FULL
+        return PhoneTaskStatus(
+            if (openDirectly) R.string.phone_task_draft_opening else R.string.phone_task_draft_ready,
+            review = PhoneTaskReview.Draft(draft, openDirectly),
+        )
     }
 
     private suspend fun runVision(
         goal: String,
         client: ChatClient,
         config: ModelConfig,
+        permission: PhoneTaskPermission,
     ): PhoneTaskStatus {
         delay(900)
         var feedback = ""
@@ -246,29 +257,16 @@ class PhoneTaskService : Service() {
                 }
 
                 is VisionAction.Tap -> {
-                    if (WeChatTask.needsManualAction(action.label)) return PhoneTaskStatus(R.string.phone_task_takeover)
-                    val answer = CompletableDeferred<Boolean>()
-                    pendingTap = answer
-                    show(
-                        PhoneTaskStatus(
-                            R.string.phone_task_review_tap,
-                            running = true,
-                            review = PhoneTaskReview.Tap(action, image),
-                            progress = progress(R.string.phone_task_phase_wait_tap, waiting = true),
-                        ),
-                    )
-                    if (overlay?.isVisible != true && !getSystemService(NotificationManager::class.java).areNotificationsEnabled()) {
-                        Toast.makeText(this, R.string.phone_task_return_to_enco, Toast.LENGTH_LONG).show()
-                    }
-                    val allowed =
-                        try {
-                            answer.await()
-                        } finally {
-                            pendingTap = null
+                    val decision =
+                        WeChatTask.tapDecision(permission, action) {
+                            reviewVisionTarget(client, config, action, imageUrl)
                         }
-                    if (!allowed) return PhoneTaskStatus(R.string.phone_task_stopped)
+                    if (decision == WeChatTapDecision.TAKE_OVER) return PhoneTaskStatus(R.string.phone_task_takeover)
+                    if (decision == WeChatTapDecision.CONFIRM) {
+                        if (!reviewTap(action, image)) return PhoneTaskStatus(R.string.phone_task_stopped)
+                        delay(950)
+                    }
                     showStep(index + 1, R.string.phone_task_phase_tap)
-                    delay(950)
                     feedback =
                         withOverlayHidden {
                             val current = ShizukuConnection.withScreenService { it.captureScreen() }
@@ -281,7 +279,7 @@ class PhoneTaskService : Service() {
                                 }
                             when {
                                 current.packageName != frame.packageName || !stillCurrent -> {
-                                    "确认期间画面已改变，没有点按。"
+                                    "核对期间画面已改变，没有点按。"
                                 }
 
                                 ShizukuConnection.withScreenService { it.tap(current.id, action.x, action.y) } -> {
@@ -313,6 +311,48 @@ class PhoneTaskService : Service() {
             delay(650)
         }
         return PhoneTaskStatus(R.string.phone_task_limit)
+    }
+
+    private suspend fun reviewTap(
+        action: VisionAction.Tap,
+        image: Bitmap,
+    ): Boolean {
+        val answer = CompletableDeferred<Boolean>()
+        pendingTap = answer
+        show(
+            PhoneTaskStatus(
+                R.string.phone_task_review_tap,
+                running = true,
+                review = PhoneTaskReview.Tap(action, image),
+                progress = progress(R.string.phone_task_phase_wait_tap, waiting = true),
+            ),
+        )
+        if (overlay?.isVisible != true && !getSystemService(NotificationManager::class.java).areNotificationsEnabled()) {
+            Toast.makeText(this, R.string.phone_task_return_to_enco, Toast.LENGTH_LONG).show()
+        }
+        return try {
+            answer.await()
+        } finally {
+            pendingTap = null
+        }
+    }
+
+    private suspend fun reviewVisionTarget(
+        client: ChatClient,
+        config: ModelConfig,
+        action: VisionAction.Tap,
+        image: String,
+    ): WeChatTapReview {
+        val reply =
+            collectReply(
+                client.streamImage(
+                    config,
+                    WeChatTask.tapGuardPrompt,
+                    "目标：${action.label}\n坐标：${action.x},${action.y}",
+                    image,
+                ),
+            )
+        return WeChatTask.parseTapReview(reply)
     }
 
     private suspend fun decideVision(
@@ -473,7 +513,8 @@ class PhoneTaskService : Service() {
 
     companion object {
         internal const val GOAL = "goal"
-        internal const val MAX_GOAL_LENGTH = 500
+        internal const val KIND = "kind"
+        internal const val PERMISSION = "permission"
         internal const val WECHAT_PACKAGE = "com.tencent.mm"
         private const val STOP = "xyz.her3.enco.action.STOP_PHONE_TASK"
         private const val CHANNEL = "phone_task"

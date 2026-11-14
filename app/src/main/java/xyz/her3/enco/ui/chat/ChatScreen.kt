@@ -58,7 +58,6 @@ internal fun ChatScreen(
     onModelSettings: () -> Unit,
     onPhoneControl: () -> Unit,
     task: PhoneTaskStatus,
-    onRunPhoneTask: () -> Unit,
     onStopPhoneTask: () -> Unit,
 ) {
     val colors = LocalEncoColors.current
@@ -180,8 +179,6 @@ internal fun ChatScreen(
             )
             if (task.running) {
                 ChatIconButton(ControlSymbol.STOP, R.string.phone_task_stop, primary = true, onClick = onStopPhoneTask)
-            } else if (!state.generating && state.draft.isNotBlank()) {
-                ChatIconButton(ControlSymbol.PHONE, R.string.phone_task_start, onClick = onRunPhoneTask)
             }
             if (state.generating) {
                 ChatIconButton(ControlSymbol.STOP, R.string.chat_stop, primary = true, onClick = onStop)

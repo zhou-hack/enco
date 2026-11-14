@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -34,9 +35,52 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.SecureFlagPolicy
 import xyz.her3.enco.R
+import xyz.her3.enco.core.agent.PhoneTaskPermission
 import xyz.her3.enco.core.agent.VisionAction
 import xyz.her3.enco.ui.theme.EncoText
 import xyz.her3.enco.ui.theme.LocalEncoColors
+
+@Composable
+internal fun PhoneTaskPermissionDialog(
+    body: String,
+    onEnableOverlay: (() -> Unit)?,
+    onCancel: () -> Unit,
+    onAllow: (PhoneTaskPermission) -> Unit,
+) {
+    PhoneDialogFrame(stringResource(R.string.phone_task_allow_title), body, onCancel) {
+        PermissionOption(R.string.phone_task_allow_full, R.string.phone_task_allow_full_detail, primary = false) {
+            onAllow(PhoneTaskPermission.FULL)
+        }
+        PermissionOption(R.string.phone_task_allow_important, R.string.phone_task_allow_important_detail, primary = true) {
+            onAllow(PhoneTaskPermission.IMPORTANT_ONLY)
+        }
+        DialogAction(R.string.phone_task_deny, false, onCancel)
+        if (onEnableOverlay != null) DialogAction(R.string.phone_task_overlay_enable, false, onEnableOverlay)
+    }
+}
+
+@Composable
+private fun PermissionOption(
+    label: Int,
+    detail: Int,
+    primary: Boolean,
+    onClick: () -> Unit,
+) {
+    val colors = LocalEncoColors.current
+    Column(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(if (primary) colors.accentTint else colors.inset)
+                .clickable(role = Role.Button, onClick = onClick)
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        EncoText(stringResource(label), weight = FontWeight.SemiBold)
+        EncoText(stringResource(detail), size = 12.sp, color = colors.muted)
+    }
+}
 
 @Composable
 internal fun PhoneTaskDialog(
@@ -47,7 +91,40 @@ internal fun PhoneTaskDialog(
     onConfirm: () -> Unit,
     preview: Bitmap? = null,
     tap: VisionAction.Tap? = null,
-    onEnableOverlay: (() -> Unit)? = null,
+) {
+    val colors = LocalEncoColors.current
+    PhoneDialogFrame(title, body, onCancel) {
+        if (preview != null && tap != null) {
+            Box(
+                Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .widthIn(max = 145.dp)
+                    .fillMaxWidth()
+                    .aspectRatio(preview.width.toFloat() / preview.height),
+            ) {
+                Image(preview.asImageBitmap(), null, Modifier.matchParentSize(), contentScale = ContentScale.FillBounds)
+                Canvas(Modifier.matchParentSize()) {
+                    val point = Offset(size.width * tap.x / 1000, size.height * tap.y / 1000)
+                    drawCircle(colors.error, radius = 9.dp.toPx(), center = point, style = Stroke(3.dp.toPx()))
+                }
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+        ) {
+            DialogAction(R.string.phone_task_deny, false, onCancel)
+            DialogAction(confirmLabel, true, onConfirm)
+        }
+    }
+}
+
+@Composable
+private fun PhoneDialogFrame(
+    title: String,
+    body: String,
+    onCancel: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit,
 ) {
     val colors = LocalEncoColors.current
     Dialog(onDismissRequest = onCancel, properties = DialogProperties(securePolicy = SecureFlagPolicy.SecureOn)) {
@@ -62,31 +139,7 @@ internal fun PhoneTaskDialog(
         ) {
             EncoText(title, size = 19.sp, weight = FontWeight.Bold)
             EncoText(body, color = colors.muted)
-            if (onEnableOverlay != null) {
-                DialogAction(R.string.phone_task_overlay_enable, false, onEnableOverlay)
-            }
-            if (preview != null && tap != null) {
-                Box(
-                    Modifier
-                        .align(Alignment.CenterHorizontally)
-                        .widthIn(max = 145.dp)
-                        .fillMaxWidth()
-                        .aspectRatio(preview.width.toFloat() / preview.height),
-                ) {
-                    Image(preview.asImageBitmap(), null, Modifier.matchParentSize(), contentScale = ContentScale.FillBounds)
-                    Canvas(Modifier.matchParentSize()) {
-                        val point = Offset(size.width * tap.x / 1000, size.height * tap.y / 1000)
-                        drawCircle(colors.error, radius = 9.dp.toPx(), center = point, style = Stroke(3.dp.toPx()))
-                    }
-                }
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-            ) {
-                DialogAction(R.string.phone_task_deny, false, onCancel)
-                DialogAction(confirmLabel, true, onConfirm)
-            }
+            content()
         }
     }
 }

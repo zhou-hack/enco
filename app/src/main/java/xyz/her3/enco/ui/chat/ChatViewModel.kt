@@ -10,7 +10,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import xyz.her3.enco.R
+import xyz.her3.enco.core.agent.PhoneTaskRequest
+import xyz.her3.enco.core.agent.PhoneTaskRouter
 import xyz.her3.enco.llm.ChatClient
 import xyz.her3.enco.llm.ChatException
 import xyz.her3.enco.llm.ChatFailure
@@ -29,6 +32,7 @@ internal data class ChatState(
     val pending: String = "",
     val loading: Boolean = true,
     val generating: Boolean = false,
+    val phoneRequest: PhoneTaskRequest? = null,
     val chatNotice: Int? = null,
     val settingsBusy: Boolean = false,
     val settingsNotice: Int? = null,
@@ -67,7 +71,7 @@ internal class ChatViewModel(
         val model = config ?: return
         val current = state.value
         val text = current.draft.trim()
-        if (current.generating || text.isEmpty()) return
+        if (current.generating || current.phoneRequest != null || text.isEmpty()) return
 
         val prompt = ChatMessage("user", text)
         val history = current.messages + prompt
@@ -76,7 +80,12 @@ internal class ChatViewModel(
         responseJob =
             viewModelScope.launch {
                 try {
-                    client.stream(model, history).collect { chunk ->
+                    val request = routePhoneTask(model, history)
+                    if (request != null) {
+                        mutableState.update { it.copy(phoneRequest = request) }
+                        return@launch
+                    }
+                    client.stream(model, listOf(ChatMessage("system", CHAT_ONLY)) + history).collect { chunk ->
                         mutableState.update { it.copy(reply = it.reply + chunk) }
                     }
                     val reply = state.value.reply
@@ -97,6 +106,38 @@ internal class ChatViewModel(
     fun stop() {
         responseJob?.cancel()
     }
+
+    fun dismissPhoneRequest(
+        restoreDraft: Boolean,
+        notice: Int? = null,
+    ) {
+        mutableState.update { current ->
+            if (current.phoneRequest == null) return@update current
+            current.copy(
+                draft = if (restoreDraft) current.draft.ifBlank { current.pending } else current.draft,
+                pending = "",
+                phoneRequest = null,
+                chatNotice = notice,
+            )
+        }
+    }
+
+    private suspend fun routePhoneTask(
+        model: ModelConfig,
+        history: List<ChatMessage>,
+    ): PhoneTaskRequest? =
+        withTimeoutOrNull(15_000) {
+            val decision = StringBuilder()
+            try {
+                client.stream(model, listOf(ChatMessage("system", PhoneTaskRouter.prompt)) + history.takeLast(9)).collect { chunk ->
+                    if (decision.length < 2_048) decision.append(chunk.take(2_048 - decision.length))
+                }
+            } catch (error: ChatException) {
+                if (error.reason != ChatFailure.INVALID_RESPONSE && error.reason != ChatFailure.EMPTY_RESPONSE) throw error
+                return@withTimeoutOrNull null
+            }
+            if (decision.length == 2_048) null else PhoneTaskRouter.parse(decision.toString())
+        }
 
     fun clearSettingsNotice() {
         mutableState.update { it.copy(settingsNotice = null) }
@@ -167,8 +208,12 @@ internal class ChatViewModel(
         notice: Int,
     ) {
         mutableState.update {
-            it.copy(draft = it.draft.ifBlank { text }, chatNotice = notice)
+            it.copy(draft = it.draft.ifBlank { text }, pending = "", reply = "", chatNotice = notice)
         }
+    }
+
+    private companion object {
+        const val CHAT_ONLY = "直接回复用户。此轮为普通聊天，你不能实际操作手机，不能声称已替用户操作。"
     }
 }
 

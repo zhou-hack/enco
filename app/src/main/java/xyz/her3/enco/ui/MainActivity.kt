@@ -29,9 +29,10 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import xyz.her3.enco.R
 import xyz.her3.enco.core.agent.PhoneTaskKind
+import xyz.her3.enco.core.agent.PhoneTaskPermission
+import xyz.her3.enco.core.agent.PhoneTaskRequest
+import xyz.her3.enco.core.agent.PhoneTaskRouter
 import xyz.her3.enco.core.agent.WeChatDraft
-import xyz.her3.enco.core.agent.isPhoneTaskRequest
-import xyz.her3.enco.core.agent.phoneTaskKind
 import xyz.her3.enco.device.service.PhoneTaskReview
 import xyz.her3.enco.device.service.PhoneTaskService
 import xyz.her3.enco.device.shizuku.ShizukuConnection
@@ -39,12 +40,14 @@ import xyz.her3.enco.device.shizuku.ShizukuStatus
 import xyz.her3.enco.ui.chat.ChatScreen
 import xyz.her3.enco.ui.chat.ChatViewModel
 import xyz.her3.enco.ui.confirm.PhoneTaskDialog
+import xyz.her3.enco.ui.confirm.PhoneTaskPermissionDialog
 import xyz.her3.enco.ui.screen.ScreenControlService
 import xyz.her3.enco.ui.settings.model.ModelSettingsScreen
 import xyz.her3.enco.ui.theme.EncoTheme
 
 class MainActivity : ComponentActivity() {
     private var overlayAllowed by mutableStateOf(false)
+    private var activityResumed by mutableStateOf(false)
     private val chat by viewModels<ChatViewModel>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -53,13 +56,12 @@ class MainActivity : ComponentActivity() {
         setContent {
             EncoTheme {
                 var page by rememberSaveable { mutableStateOf(Page.CHAT) }
-                var requestedGoal by rememberSaveable { mutableStateOf<String?>(null) }
-                var waitingForShizuku by rememberSaveable { mutableStateOf<String?>(null) }
-                var waitingForNotifications by rememberSaveable { mutableStateOf<String?>(null) }
+                var waitingForShizuku by rememberSaveable { mutableStateOf<ApprovedTask?>(null) }
+                var waitingForNotifications by rememberSaveable { mutableStateOf<ApprovedTask?>(null) }
                 val state by chat.state.collectAsState()
                 val task by PhoneTaskService.status.collectAsState()
-                val runTask: (String) -> Unit = { goal ->
-                    if (startPhoneTask(goal) && page == Page.CHAT) chat.editDraft("")
+                val runTask: (ApprovedTask) -> Unit = { approved ->
+                    chat.dismissPhoneRequest(restoreDraft = !startPhoneTask(approved))
                 }
                 val notifications =
                     rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
@@ -67,16 +69,20 @@ class MainActivity : ComponentActivity() {
                         waitingForNotifications = null
                         if (goal != null) runTask(goal)
                     }
-                val runApprovedTask: (String) -> Unit = { goal ->
-                    if (phoneTaskKind(goal) == PhoneTaskKind.WECHAT_NAVIGATION && !overlayAllowed && shouldAskForTaskNotifications()) {
-                        waitingForNotifications = goal
+                val runApprovedTask: (ApprovedTask) -> Unit = { approved ->
+                    if (approved.request.kind == PhoneTaskKind.WECHAT_NAVIGATION &&
+                        approved.permission == PhoneTaskPermission.IMPORTANT_ONLY &&
+                        !overlayAllowed && shouldAskForTaskNotifications()
+                    ) {
+                        waitingForNotifications = approved
                         notifications.launch(Manifest.permission.POST_NOTIFICATIONS)
                     } else {
-                        runTask(goal)
+                        runTask(approved)
                     }
                 }
                 val back = {
                     if (page == Page.MODELS) chat.cancelSettingsAction()
+                    if (waitingForShizuku != null) chat.dismissPhoneRequest(restoreDraft = true)
                     waitingForShizuku = null
                     page = Page.CHAT
                 }
@@ -86,17 +92,7 @@ class MainActivity : ComponentActivity() {
                         ChatScreen(
                             state = state,
                             onEditDraft = chat::editDraft,
-                            onSend = {
-                                if (isPhoneTaskRequest(state.draft)) {
-                                    if (task.running) {
-                                        Toast.makeText(this, R.string.phone_task_busy, Toast.LENGTH_SHORT).show()
-                                    } else {
-                                        requestedGoal = state.draft.trim()
-                                    }
-                                } else {
-                                    chat.send()
-                                }
-                            },
+                            onSend = chat::send,
                             onStop = chat::stop,
                             onModelSettings = {
                                 chat.clearSettingsNotice()
@@ -104,9 +100,6 @@ class MainActivity : ComponentActivity() {
                             },
                             onPhoneControl = { page = Page.PHONE },
                             task = task,
-                            onRunPhoneTask = {
-                                if (state.model.isBlank()) page = Page.MODELS else requestedGoal = state.draft.trim()
-                            },
                             onStopPhoneTask = ::stopPhoneTask,
                         )
                     }
@@ -131,12 +124,12 @@ class MainActivity : ComponentActivity() {
                             onDispose { lifecycle.removeObserver(observer) }
                         }
                         val status by ShizukuConnection.status.collectAsState()
-                        LaunchedEffect(status, waitingForShizuku) {
-                            if (status == ShizukuStatus.CONNECTED) {
-                                waitingForShizuku?.let { goal ->
+                        LaunchedEffect(status, waitingForShizuku, activityResumed) {
+                            if (status == ShizukuStatus.CONNECTED && activityResumed) {
+                                waitingForShizuku?.let { approved ->
                                     waitingForShizuku = null
                                     page = Page.CHAT
-                                    runApprovedTask(goal)
+                                    runApprovedTask(approved)
                                 }
                             }
                         }
@@ -149,51 +142,66 @@ class MainActivity : ComponentActivity() {
                             onRetry = { ShizukuConnection.refresh(requestPermission = true) },
                             onOpenScreenControl = ::openScreenControl,
                             task = task,
-                            modelReady = state.model.isNotBlank(),
-                            onStartTask = { requestedGoal = it },
+                            modelReady = state.model.isNotBlank() && !state.generating && state.phoneRequest == null,
+                            onStartTask = {
+                                page = Page.CHAT
+                                chat.editDraft(it)
+                                chat.send()
+                            },
                             onStopTask = ::stopPhoneTask,
                         )
                     }
                 }
-                requestedGoal?.let { goal ->
-                    PhoneTaskDialog(
-                        title = stringResource(R.string.phone_task_allow_title),
-                        body =
-                            stringResource(
-                                when (phoneTaskKind(goal)) {
-                                    PhoneTaskKind.WECHAT_NAVIGATION -> R.string.phone_task_allow_vision
-                                    PhoneTaskKind.WECHAT_MESSAGE -> R.string.phone_task_allow_draft
-                                    PhoneTaskKind.SETTINGS -> R.string.phone_task_allow_body
-                                },
-                                goal,
-                            ),
-                        confirmLabel = R.string.phone_task_allow,
-                        onEnableOverlay = if (overlayAllowed) null else ::openOverlaySettings,
-                        onCancel = { requestedGoal = null },
-                        onConfirm = {
-                            requestedGoal = null
-                            if (phoneTaskKind(goal) == PhoneTaskKind.WECHAT_MESSAGE ||
-                                ShizukuConnection.status.value == ShizukuStatus.CONNECTED
-                            ) {
-                                runApprovedTask(goal)
-                            } else {
-                                waitingForShizuku = goal
-                                page = Page.PHONE
-                                ShizukuConnection.refresh(requestPermission = true)
-                                Toast.makeText(this, R.string.phone_task_setup, Toast.LENGTH_LONG).show()
-                            }
-                        },
-                    )
+                val request = state.phoneRequest
+                if (request != null && waitingForShizuku == null && waitingForNotifications == null && !state.generating) {
+                    if (task.running) {
+                        LaunchedEffect(request) {
+                            chat.dismissPhoneRequest(restoreDraft = true, notice = R.string.phone_task_busy)
+                        }
+                    } else {
+                        PhoneTaskPermissionDialog(
+                            body =
+                                stringResource(
+                                    when (request.kind) {
+                                        PhoneTaskKind.WECHAT_NAVIGATION -> R.string.phone_task_allow_vision
+                                        PhoneTaskKind.WECHAT_MESSAGE -> R.string.phone_task_allow_draft
+                                        PhoneTaskKind.SETTINGS -> R.string.phone_task_allow_body
+                                    },
+                                    request.goal,
+                                ),
+                            onEnableOverlay = if (overlayAllowed) null else ::openOverlaySettings,
+                            onCancel = { chat.dismissPhoneRequest(restoreDraft = true, notice = R.string.phone_task_permission_cancelled) },
+                            onAllow = { permission ->
+                                val approved = ApprovedTask(request, permission)
+                                if (request.kind == PhoneTaskKind.WECHAT_MESSAGE ||
+                                    ShizukuConnection.status.value == ShizukuStatus.CONNECTED
+                                ) {
+                                    runApprovedTask(approved)
+                                } else {
+                                    waitingForShizuku = approved
+                                    page = Page.PHONE
+                                    ShizukuConnection.refresh(requestPermission = true)
+                                    Toast.makeText(this, R.string.phone_task_setup, Toast.LENGTH_LONG).show()
+                                }
+                            },
+                        )
+                    }
                 }
                 when (val review = task.review) {
                     is PhoneTaskReview.Draft -> {
-                        PhoneTaskDialog(
-                            title = stringResource(R.string.phone_task_draft_title),
-                            body = stringResource(R.string.phone_task_draft_body, review.draft.recipient, review.draft.message),
-                            confirmLabel = R.string.phone_task_open_wechat,
-                            onCancel = PhoneTaskService::dismissDraft,
-                            onConfirm = { openWeChatDraft(review.draft) },
-                        )
+                        if (review.openDirectly) {
+                            LaunchedEffect(review, activityResumed) {
+                                if (activityResumed && !openWeChatDraft(review.draft)) PhoneTaskService.dismissDraft()
+                            }
+                        } else {
+                            PhoneTaskDialog(
+                                title = stringResource(R.string.phone_task_draft_title),
+                                body = stringResource(R.string.phone_task_draft_body, review.draft.recipient, review.draft.message),
+                                confirmLabel = R.string.phone_task_open_wechat,
+                                onCancel = PhoneTaskService::dismissDraft,
+                                onConfirm = { openWeChatDraft(review.draft) },
+                            )
+                        }
                     }
 
                     is PhoneTaskReview.Tap -> {
@@ -221,14 +229,14 @@ class MainActivity : ComponentActivity() {
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
 
-    private fun startPhoneTask(goal: String): Boolean {
+    private fun startPhoneTask(approved: ApprovedTask): Boolean {
         if (PhoneTaskService.status.value.running) return false
-        if (goal.length > PhoneTaskService.MAX_GOAL_LENGTH) {
+        val (kind, goal) = approved.request
+        if (goal.length > PhoneTaskRouter.MAX_GOAL_LENGTH) {
             Toast.makeText(this, R.string.phone_task_goal_length, Toast.LENGTH_LONG).show()
             return false
         }
         try {
-            val kind = phoneTaskKind(goal)
             val target =
                 when (kind) {
                     PhoneTaskKind.SETTINGS -> Intent(Settings.ACTION_SETTINGS)
@@ -240,7 +248,12 @@ class MainActivity : ComponentActivity() {
                 return false
             }
             stopService(Intent(this, ScreenControlService::class.java))
-            startForegroundService(Intent(this, PhoneTaskService::class.java).putExtra(PhoneTaskService.GOAL, goal))
+            startForegroundService(
+                Intent(this, PhoneTaskService::class.java)
+                    .putExtra(PhoneTaskService.GOAL, goal)
+                    .putExtra(PhoneTaskService.KIND, kind.name)
+                    .putExtra(PhoneTaskService.PERMISSION, approved.permission.name),
+            )
             if (target != null) startActivity(target)
             return true
         } catch (_: RuntimeException) {
@@ -254,17 +267,19 @@ class MainActivity : ComponentActivity() {
         stopService(Intent(this, PhoneTaskService::class.java))
     }
 
-    private fun openWeChatDraft(draft: WeChatDraft) {
+    private fun openWeChatDraft(draft: WeChatDraft): Boolean {
         val intent =
             Intent(Intent.ACTION_SEND)
                 .setClassName(PhoneTaskService.WECHAT_PACKAGE, "com.tencent.mm.ui.tools.ShareImgUI")
                 .setType("text/plain")
                 .putExtra(Intent.EXTRA_TEXT, draft.message)
-        try {
+        return try {
             startActivity(intent)
             PhoneTaskService.dismissDraft()
+            true
         } catch (_: ActivityNotFoundException) {
             Toast.makeText(this, R.string.phone_task_wechat_unavailable, Toast.LENGTH_LONG).show()
+            false
         }
     }
 
@@ -284,7 +299,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        activityResumed = true
         overlayAllowed = Settings.canDrawOverlays(this)
+    }
+
+    override fun onPause() {
+        activityResumed = false
+        super.onPause()
     }
 
     override fun onStart() {
@@ -319,4 +340,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private enum class Page { CHAT, MODELS, PHONE }
+
+    private data class ApprovedTask(
+        val request: PhoneTaskRequest,
+        val permission: PhoneTaskPermission,
+    ) : java.io.Serializable
 }

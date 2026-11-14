@@ -25,9 +25,13 @@
     <string name="phone_task_allow_title">允许 enco 操控手机？</string>
     <string name="phone_task_allow_body">%1$s\n\n任务文本与所需的设置控件名称会发送给你配置的模型。</string>
     <string name="phone_task_allow_draft">%1$s\n\n任务文本会发给你配置的模型，用于准备微信消息。请在微信里核对收件人并发送。</string>
-    <string name="phone_task_allow_vision">%1$s\n\n当前微信页面的截图会发给你配置的模型，模型需要支持图片输入。点按前会让你确认位置。</string>
+    <string name="phone_task_allow_vision">%1$s\n\n微信截图会发给你配置的视觉模型。付款、转账、密码和验证码由你接管。</string>
     <string name="phone_task_deny">取消</string>
-    <string name="phone_task_allow">允许本次</string>
+    <string name="phone_task_allow_full">完全允许</string>
+    <string name="phone_task_allow_full_detail">本次任务内自动执行可放行的操作。触及接管规则时交还给你。</string>
+    <string name="phone_task_allow_important">允许，重要操作先确认</string>
+    <string name="phone_task_allow_important_detail">普通浏览自动执行。发送前或点按目标无法核实时请你确认。</string>
+    <string name="phone_task_permission_cancelled">已取消手机操控。</string>
     <string name="phone_task_review_tap">确认微信点按</string>
     <string name="phone_task_return_to_enco">请返回 enco 确认微信点按位置。</string>
     <string name="phone_task_vision_error">模型服务拒绝了截图请求，请检查当前模型是否支持图片输入。</string>
@@ -35,6 +39,7 @@
     <string name="phone_task_allow_tap">允许点按</string>
     <string name="phone_task_draft_title">核对微信消息</string>
     <string name="phone_task_draft_ready">微信消息已准备好，等待核对。</string>
+    <string name="phone_task_draft_opening">微信消息已准备好，正在打开选人界面。</string>
     <string name="phone_task_draft_missing">请在任务里写清楚一个收件人和要发的消息。</string>
     <string name="phone_task_draft_body">收件人：%1$s\n消息：%2$s\n\n在微信里选中这位收件人，核对后发送。</string>
     <string name="phone_task_open_wechat">打开微信确认</string>
