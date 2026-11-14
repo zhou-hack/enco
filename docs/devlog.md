@@ -143,7 +143,7 @@
 - 完成：补全 `Stage`、`RawNode`、`ActionResult`、`LlmClient`、`AgentEvent` 和 `MemoryStore` 等核心边界，保留旧 `DeviceController` 方法与动作。新动作覆盖设计文档的点按、长按、输入、滑动、导航、启动、等待和 Agent 语义动作。
 - 兼容：旧设备默认只接受主屏，不再对虚拟屏等未实现位置返回成功；`Observation` 和元素字段均追加默认值。`MemoryStore` 目前只定义接口，没有提前实现 Room。
 - 协议：严格校验 JSON 参数类型、坐标、文本长度、滑动方向、等待上限和未知命令，继续拒绝 shell。`ChatLlmClient` 复用现有 SSE 客户端，支持多条文本与 base64 图片消息，未重写聊天页。
-- 验证：Spotless、Debug 构建及两模块 34 项 JVM 测试通过，其中新增 12 项解析、旧接口兼容、假模型和多模态映射测试。真实图片服务请求留到真机验收，未以 MockWebServer 代替。
+- 验证：Spotless、Debug 构建及两模块 34 项 JVM 测试通过，其中新增 12 项解析、旧接口兼容、假模型和多模态映射测试。随后在真机上用已配置的真实图片模型发送同一张蓝色测试图两次，两次回复均正确识别为蓝色。
 - AI 工具：Trae（Kimi-K3.1-Pro）实现接口、解析与模型适配，人工审阅并收紧旧设备的舞台默认值。
 
 ### 通用控件压缩与屏幕回放
@@ -174,5 +174,12 @@
 - 完成：新增 `device/stage/MainScreenDevice.kt`，实现核心 `DeviceController`。`observe()` 把 shell 控件树经 `ElementCompressor` 压缩为编号元素并附截图与包名；支持编号/坐标点按、长按、滑动、通用文本输入、返回、主页和包名/名称启动。
 - 边界：仅接受主屏；`AskUser/Remember/TakeOverRequest/Finish/TakeOver` 等 Agent 语义动作不由设备执行。`PhoneTaskService` 仍走 `SettingsDevice` 与原微信链路，未提前替换为通用 `ShizukuDevice`。
 - 验证：新增 4 项 Stage 单测（节点映射、元素中心点按、编辑路径输入、包名/名称路由、非法启动与语义动作拒绝、非主屏拒绝），两模块 57 项 JVM 测试与 Debug 构建通过。
-- 待办：真机读屏、输入与导航验收因 ADB 断连暂未执行，已准备临时探针，设备恢复后立即补测；探针不纳入提交。
-- AI 工具：Trae（Kimi-K3.1-Pro）实现 Stage 与假 AIDL 单测。
+- 真机：ADB 重连后在 `f788d315` 验证 `open(MAIN)`、启动设置、截图、搜索框点按、输入“亮度”并回读、返回及非法包名拒绝。设置首页 132 个原始节点压缩为 79 个编号元素；非法包名 `bad package;rm` 返回失败。临时探针已全部移除，未纳入提交。
+- AI 工具：Trae（Kimi-K3.1-Pro）实现 Stage 与假 AIDL 单测，并通过 ADB 完成真机验收。
+
+### M0 与 11 月 14 日收尾验收
+
+- 完成：真实图片模型两次正确识别蓝色测试图；微信搜索框整段粘贴、一键授权、通用 Stage 输入、截图按钮与通知关闭均已真机验证。
+- 回归：通知“关闭”停止 `ScreenControlService`，保留 `PhoneTaskOverlayService`。设置专用 Agent 首次回归继承了前次“亮度”搜索页，正确报告无法找到蓝牙入口；重置设置后重试，成功进入蓝牙页并显示设备名称与可用设备，未改动蓝牙开关。
+- 验证：最终筛查本轮 `enco.agent`、`enco.device`、`enco.shizuku` 与 `AndroidRuntime` 日志，未发现新警告或崩溃。真机为 Android 15 的 Shizuku root 模式，未将此结果写成 Shizuku ADB 模式或第二台 Android 14 设备的验收。
+- AI 工具：Trae（Kimi-K3.1-Pro）执行图片、设备、任务与通知回归，并整理排期与验收记录。

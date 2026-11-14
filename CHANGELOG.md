@@ -4,6 +4,7 @@
 
 ### 2026-11-14
 
+- `docs(android): 记录 M0 与主屏原语真机验收`
 - `feat(device): 增加主屏 Stage 与通用文本输入`
 - `feat(device): 读取主屏控件并注入通用动作`
 - `feat(device): 增加用户触发的一键权限授予`
