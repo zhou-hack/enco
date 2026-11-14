@@ -63,8 +63,8 @@ internal fun ChatScreen(
     val colors = LocalEncoColors.current
     val list = rememberLazyListState()
     val showPending = state.pending.isNotEmpty()
-    LaunchedEffect(state.messages.size, state.pending) {
-        if (state.messages.isNotEmpty() || showPending) list.scrollToItem(0)
+    LaunchedEffect(state.messages.size, state.pending, task.detail) {
+        if (state.messages.isNotEmpty() || showPending || task.detail.isNotBlank()) list.scrollToItem(0)
     }
 
     ChatPage {
@@ -99,7 +99,7 @@ internal fun ChatScreen(
         }
 
         Box(Modifier.weight(1f).fillMaxWidth()) {
-            if (state.messages.isEmpty() && !showPending) {
+            if (state.messages.isEmpty() && !showPending && task.detail.isBlank()) {
                 Column(
                     modifier = Modifier.align(Alignment.Center).padding(bottom = 30.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -125,6 +125,7 @@ internal fun ChatScreen(
                     verticalArrangement = Arrangement.spacedBy(18.dp),
                     contentPadding = PaddingValues(vertical = 12.dp),
                 ) {
+                    if (task.detail.isNotBlank()) item { ChatBubble(task.detail, user = false) }
                     if (showPending) {
                         if (state.reply.isNotEmpty()) {
                             item { ChatBubble(state.reply, user = false) }
@@ -145,7 +146,6 @@ internal fun ChatScreen(
         }
         if (task.message != R.string.phone_task_idle) {
             EncoText(task.statusText(), Modifier.padding(bottom = 4.dp), size = 13.sp, color = colors.muted)
-            if (task.detail.isNotBlank()) EncoText(task.detail, Modifier.padding(bottom = 8.dp), size = 13.sp)
         }
         state.chatNotice?.let { notice ->
             EncoText(stringResource(notice), Modifier.padding(bottom = 8.dp), size = 13.sp, color = colors.error)

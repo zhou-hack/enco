@@ -20,6 +20,10 @@ class PhoneTaskRouterTest {
             PhoneTaskRouter.parse("""{"route":"wechat_message","goal":"给小林发：到了"}"""),
         )
         assertNull(PhoneTaskRouter.parse("""{"route":"chat","goal":"打开微信"}"""))
+        assertEquals(
+            PhoneTaskRequest(PhoneTaskKind.GMAIL_INBOX, "列出最近10封邮件"),
+            PhoneTaskRouter.parse("""{"route":"gmail_inbox","goal":"列出最近10封邮件"}"""),
+        )
         assertNull(PhoneTaskRouter.parse("""{"route":"shell","goal":"运行命令"}"""))
         assertNull(PhoneTaskRouter.parse("""{"route":"settings","goal":" "}"""))
         assertNull(PhoneTaskRouter.parse("""{"route":"settings","goal":"${"a".repeat(501)}"}"""))

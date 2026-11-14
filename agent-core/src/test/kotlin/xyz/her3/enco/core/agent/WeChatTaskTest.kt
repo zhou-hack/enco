@@ -41,6 +41,17 @@ class WeChatTaskTest {
         assertNull(WeChatTask.parseVision("""{"action":"tap","x":1001,"y":100,"label":"搜索"}"""))
         assertNull(WeChatTask.parseVision("""{"action":"send","target":1}"""))
         assertNull(WeChatTask.parseVision("""{"action":"type","text":"anything"}"""))
+        assertNull(WeChatTask.parseVision("""{"action":"send","x":900,"y":830}"""))
+        assertEquals(
+            VisionAction.Send(900, 830),
+            WeChatTask.parseVision("""{"action":"send","x":900,"y":830}""", allowMessage = true),
+        )
+        assertEquals(
+            VisionAction.Type(recipient = false),
+            WeChatTask.parseVision("""{"action":"type_message"}""", allowMessage = true),
+        )
+        assertEquals(WeChatMessageReview.TAKE_OVER, WeChatTask.parseMessageReview("""{"decision":"allow"}"""))
+        assertEquals(WeChatMessageReview.SEND_BUTTON, WeChatTask.parseMessageReview("""{"decision":"send_button"}"""))
     }
 
     @Test
@@ -48,6 +59,7 @@ class WeChatTaskTest {
         assertNull(WeChatTask.parseDraft("""{"recipient":"张三"}"""))
         assertNull(WeChatTask.parseDraft("""{"recipient":"张三","message":""}"""))
         assertEquals(WeChatDraft("张三", "明天见"), WeChatTask.parseDraft("""{"recipient":"张三","message":"明天见"}"""))
+        assertEquals(WeChatDraft("张三", " 明天见 "), WeChatTask.parseDraft("""{"recipient":"张三","message":" 明天见 "}"""))
     }
 
     @Test

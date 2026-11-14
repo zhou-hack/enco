@@ -5,7 +5,6 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.IBinder
@@ -38,19 +37,14 @@ class PhoneTaskOverlayService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        if (overlay != null) return START_STICKY
+        if (overlay != null) return START_NOT_STICKY
         startForeground(NOTIFICATION, notification())
         val ball =
             PhoneTaskOverlay(
                 this,
                 onOpen = ::openEnco,
-                onStop = {
-                    if (PhoneTaskService.status.value.running) {
-                        stopService(Intent(this, PhoneTaskService::class.java))
-                    } else {
-                        PhoneTaskService.dismissDraft()
-                    }
-                },
+                onStop = { stopService(Intent(this, PhoneTaskService::class.java)) },
+                onDismiss = { stopSelf() },
                 onPermissionRevoked = { stopSelf() },
             )
         try {
@@ -64,7 +58,7 @@ class PhoneTaskOverlayService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
     override fun onDestroy() {
@@ -111,7 +105,7 @@ class PhoneTaskOverlayService : Service() {
             try {
                 context.startForegroundService(Intent(context, PhoneTaskOverlayService::class.java))
             } catch (error: RuntimeException) {
-                Log.w("enco.device", "系统未能启动常驻悬浮球", error)
+                Log.w("enco.device", "系统未能启动任务悬浮球", error)
             }
         }
 
@@ -121,22 +115,11 @@ class PhoneTaskOverlayService : Service() {
                 overlay?.setCaptureHidden(true)
                 try {
                     // 等悬浮球退出合成，再截图或注入触摸。
-                    if (wasVisible) delay(100)
+                    if (wasVisible) delay(200)
                     action()
                 } finally {
                     overlay?.setCaptureHidden(false)
                 }
             }
-    }
-}
-
-class RestorePhoneTaskOverlayReceiver : BroadcastReceiver() {
-    override fun onReceive(
-        context: Context,
-        intent: Intent,
-    ) {
-        if (intent.action == Intent.ACTION_BOOT_COMPLETED || intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) {
-            PhoneTaskOverlayService.startIfAllowed(context)
-        }
     }
 }

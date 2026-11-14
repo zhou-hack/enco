@@ -32,7 +32,6 @@ import xyz.her3.enco.core.agent.PhoneTaskKind
 import xyz.her3.enco.core.agent.PhoneTaskPermission
 import xyz.her3.enco.core.agent.PhoneTaskRequest
 import xyz.her3.enco.core.agent.PhoneTaskRouter
-import xyz.her3.enco.core.agent.WeChatDraft
 import xyz.her3.enco.device.overlay.PhoneTaskOverlayService
 import xyz.her3.enco.device.service.PhoneTaskReview
 import xyz.her3.enco.device.service.PhoneTaskService
@@ -71,7 +70,7 @@ class MainActivity : ComponentActivity() {
                         if (goal != null) runTask(goal)
                     }
                 val runApprovedTask: (ApprovedTask) -> Unit = { approved ->
-                    if (approved.request.kind == PhoneTaskKind.WECHAT_NAVIGATION &&
+                    if (approved.request.kind in setOf(PhoneTaskKind.WECHAT_NAVIGATION, PhoneTaskKind.WECHAT_MESSAGE) &&
                         approved.permission == PhoneTaskPermission.IMPORTANT_ONLY &&
                         !overlayAllowed && shouldAskForTaskNotifications()
                     ) {
@@ -165,7 +164,8 @@ class MainActivity : ComponentActivity() {
                                 stringResource(
                                     when (request.kind) {
                                         PhoneTaskKind.WECHAT_NAVIGATION -> R.string.phone_task_allow_vision
-                                        PhoneTaskKind.WECHAT_MESSAGE -> R.string.phone_task_allow_draft
+                                        PhoneTaskKind.WECHAT_MESSAGE -> R.string.phone_task_allow_wechat_send
+                                        PhoneTaskKind.GMAIL_INBOX -> R.string.phone_task_allow_gmail
                                         PhoneTaskKind.SETTINGS -> R.string.phone_task_allow_body
                                     },
                                     request.goal,
@@ -174,9 +174,7 @@ class MainActivity : ComponentActivity() {
                             onCancel = { chat.dismissPhoneRequest(restoreDraft = true, notice = R.string.phone_task_permission_cancelled) },
                             onAllow = { permission ->
                                 val approved = ApprovedTask(request, permission)
-                                if (request.kind == PhoneTaskKind.WECHAT_MESSAGE ||
-                                    ShizukuConnection.status.value == ShizukuStatus.CONNECTED
-                                ) {
+                                if (ShizukuConnection.status.value == ShizukuStatus.CONNECTED) {
                                     runApprovedTask(approved)
                                 } else {
                                     waitingForShizuku = approved
@@ -189,20 +187,17 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 when (val review = task.review) {
-                    is PhoneTaskReview.Draft -> {
-                        if (review.openDirectly) {
-                            LaunchedEffect(review, activityResumed) {
-                                if (activityResumed && !openWeChatDraft(review.draft)) PhoneTaskService.dismissDraft()
-                            }
-                        } else {
-                            PhoneTaskDialog(
-                                title = stringResource(R.string.phone_task_draft_title),
-                                body = stringResource(R.string.phone_task_draft_body, review.draft.recipient, review.draft.message),
-                                confirmLabel = R.string.phone_task_open_wechat,
-                                onCancel = PhoneTaskService::dismissDraft,
-                                onConfirm = { openWeChatDraft(review.draft) },
-                            )
-                        }
+                    is PhoneTaskReview.Send -> {
+                        PhoneTaskDialog(
+                            title = stringResource(R.string.phone_task_confirm_send),
+                            body = stringResource(R.string.phone_task_send_body, review.message.recipient, review.message.message),
+                            confirmLabel = R.string.phone_task_send,
+                            onCancel = { PhoneTaskService.answerTap(false) },
+                            onConfirm = {
+                                moveTaskToBack(true)
+                                PhoneTaskService.answerTap(true)
+                            },
+                        )
                     }
 
                     is PhoneTaskReview.Tap -> {
@@ -240,22 +235,31 @@ class MainActivity : ComponentActivity() {
         try {
             val target =
                 when (kind) {
-                    PhoneTaskKind.SETTINGS -> Intent(Settings.ACTION_SETTINGS)
-                    PhoneTaskKind.WECHAT_NAVIGATION -> packageManager.getLaunchIntentForPackage(PhoneTaskService.WECHAT_PACKAGE)
-                    PhoneTaskKind.WECHAT_MESSAGE -> null
+                    PhoneTaskKind.GMAIL_INBOX -> {
+                        packageManager.getLaunchIntentForPackage(PhoneTaskService.GMAIL_PACKAGE)
+                    }
+
+                    PhoneTaskKind.SETTINGS -> {
+                        Intent(Settings.ACTION_SETTINGS)
+                    }
+
+                    PhoneTaskKind.WECHAT_NAVIGATION, PhoneTaskKind.WECHAT_MESSAGE -> {
+                        packageManager.getLaunchIntentForPackage(PhoneTaskService.WECHAT_PACKAGE)
+                    }
                 }
-            if ((target == null || target.resolveActivity(packageManager) == null) && kind != PhoneTaskKind.WECHAT_MESSAGE) {
+            if (target == null || target.resolveActivity(packageManager) == null) {
                 Toast.makeText(this, R.string.phone_task_screen, Toast.LENGTH_LONG).show()
                 return false
             }
             stopService(Intent(this, ScreenControlService::class.java))
+            PhoneTaskOverlayService.startIfAllowed(this)
             startForegroundService(
                 Intent(this, PhoneTaskService::class.java)
                     .putExtra(PhoneTaskService.GOAL, goal)
                     .putExtra(PhoneTaskService.KIND, kind.name)
                     .putExtra(PhoneTaskService.PERMISSION, approved.permission.name),
             )
-            if (target != null) startActivity(target)
+            startActivity(target)
             return true
         } catch (_: RuntimeException) {
             stopService(Intent(this, PhoneTaskService::class.java))
@@ -266,22 +270,6 @@ class MainActivity : ComponentActivity() {
 
     private fun stopPhoneTask() {
         stopService(Intent(this, PhoneTaskService::class.java))
-    }
-
-    private fun openWeChatDraft(draft: WeChatDraft): Boolean {
-        val intent =
-            Intent(Intent.ACTION_SEND)
-                .setClassName(PhoneTaskService.WECHAT_PACKAGE, "com.tencent.mm.ui.tools.ShareImgUI")
-                .setType("text/plain")
-                .putExtra(Intent.EXTRA_TEXT, draft.message)
-        return try {
-            startActivity(intent)
-            PhoneTaskService.dismissDraft()
-            true
-        } catch (_: ActivityNotFoundException) {
-            Toast.makeText(this, R.string.phone_task_wechat_unavailable, Toast.LENGTH_LONG).show()
-            false
-        }
     }
 
     private fun openScreenControl() {
@@ -302,7 +290,6 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         activityResumed = true
         overlayAllowed = Settings.canDrawOverlays(this)
-        PhoneTaskOverlayService.startIfAllowed(this)
     }
 
     override fun onPause() {

@@ -18,13 +18,17 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import xyz.her3.enco.R
 import xyz.her3.enco.core.agent.PhoneOperator
 import xyz.her3.enco.core.agent.PhoneTaskKind
@@ -33,10 +37,12 @@ import xyz.her3.enco.core.agent.PhoneTaskRouter
 import xyz.her3.enco.core.agent.TaskResult
 import xyz.her3.enco.core.agent.VisionAction
 import xyz.her3.enco.core.agent.WeChatDraft
+import xyz.her3.enco.core.agent.WeChatMessageReview
 import xyz.her3.enco.core.agent.WeChatTapDecision
 import xyz.her3.enco.core.agent.WeChatTapReview
 import xyz.her3.enco.core.agent.WeChatTask
 import xyz.her3.enco.device.overlay.PhoneTaskOverlayService
+import xyz.her3.enco.device.shell.GmailInboxReader
 import xyz.her3.enco.device.shizuku.ShizukuConnection
 import xyz.her3.enco.llm.ChatClient
 import xyz.her3.enco.llm.ChatException
@@ -63,9 +69,8 @@ internal data class PhoneTaskProgress(
 )
 
 internal sealed interface PhoneTaskReview {
-    data class Draft(
-        val draft: WeChatDraft,
-        val openDirectly: Boolean,
+    data class Send(
+        val message: WeChatDraft,
     ) : PhoneTaskReview
 
     data class Tap(
@@ -99,12 +104,17 @@ class PhoneTaskService : Service() {
             return START_NOT_STICKY
         }
 
-        appLabel = if (kind == PhoneTaskKind.SETTINGS) R.string.phone_task_app_settings else R.string.phone_task_app_wechat
+        appLabel =
+            when (kind) {
+                PhoneTaskKind.SETTINGS -> R.string.phone_task_app_settings
+                PhoneTaskKind.GMAIL_INBOX -> R.string.phone_task_app_gmail
+                else -> R.string.phone_task_app_wechat
+            }
         val initialPhase =
             when (kind) {
                 PhoneTaskKind.SETTINGS -> R.string.phone_task_phase_open_settings
-                PhoneTaskKind.WECHAT_MESSAGE -> R.string.phone_task_phase_edit_message
-                PhoneTaskKind.WECHAT_NAVIGATION -> R.string.phone_task_phase_open_wechat
+                PhoneTaskKind.GMAIL_INBOX -> R.string.phone_task_phase_read_gmail
+                PhoneTaskKind.WECHAT_MESSAGE, PhoneTaskKind.WECHAT_NAVIGATION -> R.string.phone_task_phase_open_wechat
             }
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(
@@ -124,8 +134,17 @@ class PhoneTaskService : Service() {
                     val result =
                         withTimeoutOrNull(600_000) {
                             when (kind) {
+                                PhoneTaskKind.GMAIL_INBOX -> {
+                                    readGmailInbox(goal)
+                                }
+
                                 PhoneTaskKind.WECHAT_MESSAGE -> {
-                                    prepareDraft(goal, client, config, permission)
+                                    val message = readMessage(goal, client, config)
+                                    if (message == null) {
+                                        PhoneTaskStatus(R.string.phone_task_draft_missing)
+                                    } else {
+                                        runVision(goal, client, config, permission, message)
+                                    }
                                 }
 
                                 PhoneTaskKind.WECHAT_NAVIGATION -> {
@@ -186,13 +205,11 @@ class PhoneTaskService : Service() {
         return START_NOT_STICKY
     }
 
-    private suspend fun prepareDraft(
+    private suspend fun readMessage(
         goal: String,
         client: ChatClient,
         config: ModelConfig,
-        permission: PhoneTaskPermission,
-    ): PhoneTaskStatus {
-        showStep(1, R.string.phone_task_phase_edit_message)
+    ): WeChatDraft? {
         val reply =
             collectReply(
                 client.stream(
@@ -203,11 +220,40 @@ class PhoneTaskService : Service() {
                     ),
                 ),
             )
-        val draft = WeChatTask.parseDraft(reply) ?: return PhoneTaskStatus(R.string.phone_task_draft_missing)
-        val openDirectly = permission == PhoneTaskPermission.FULL
+        return WeChatTask.parseDraft(reply)
+    }
+
+    private suspend fun readGmailInbox(goal: String): PhoneTaskStatus {
+        delay(850)
+        val count =
+            Regex("(?<![0-9])[0-9]{1,3}(?![0-9])")
+                .find(goal)
+                ?.value
+                ?.toIntOrNull()
+                ?.coerceIn(1, 20) ?: 10
+        val rows =
+            PhoneTaskOverlayService
+                .withoutOverlay {
+                    ShizukuConnection.withScreenService { it.readGmailInbox(count) }
+                }?.asList()
+                ?.chunked(3)
+                .orEmpty()
+        if (rows.isEmpty()) return PhoneTaskStatus(R.string.phone_task_gmail_unavailable)
+        val result =
+            rows
+                .mapIndexed { index, (sender, subject, date) ->
+                    getString(
+                        R.string.phone_task_gmail_row,
+                        index + 1,
+                        sender,
+                        subject.ifBlank { getString(R.string.phone_task_gmail_no_subject) },
+                        date,
+                    )
+                }.joinToString("\n\n")
+        val title = getString(R.string.phone_task_gmail_count, rows.size, count)
         return PhoneTaskStatus(
-            if (openDirectly) R.string.phone_task_draft_opening else R.string.phone_task_draft_ready,
-            review = PhoneTaskReview.Draft(draft, openDirectly),
+            if (rows.size == count) R.string.phone_task_finished else R.string.phone_task_not_finished,
+            detail = "$title\n\n$result",
         )
     }
 
@@ -216,15 +262,22 @@ class PhoneTaskService : Service() {
         client: ChatClient,
         config: ModelConfig,
         permission: PhoneTaskPermission,
+        message: WeChatDraft? = null,
     ): PhoneTaskStatus {
         delay(900)
         var feedback = ""
         var previousImage = ""
         var unchanged = 0
+        var sent = false
+        var searched = false
+        var composed = false
+        val unverified = PhoneTaskStatus(R.string.phone_task_wechat_unverified)
         repeat(40) { index ->
             showStep(index + 1, R.string.phone_task_phase_read_wechat)
             val frame = PhoneTaskOverlayService.withoutOverlay { ShizukuConnection.withScreenService { it.captureScreen() } }
-            if (frame.packageName != WECHAT_PACKAGE) return PhoneTaskStatus(R.string.phone_task_takeover)
+            if (frame.packageName != WECHAT_PACKAGE) {
+                return if (sent) unverified else PhoneTaskStatus(R.string.phone_task_takeover)
+            }
             val image = frame.image?.softwareImage() ?: return PhoneTaskStatus(R.string.phone_task_screen)
             val fingerprint = withContext(Dispatchers.Default) { image.fingerprint() }
             if (fingerprint.isEmpty()) return PhoneTaskStatus(R.string.phone_task_takeover)
@@ -239,13 +292,27 @@ class PhoneTaskService : Service() {
                 }
             val action =
                 try {
-                    decideVision(client, config, goal, feedback, imageUrl)
+                    decideVision(client, config, goal, feedback, imageUrl, message)
                 } catch (error: ChatException) {
                     if (error.status !in setOf(400, 413, 415, 422)) throw error
                     return PhoneTaskStatus(R.string.phone_task_vision_error)
-                } ?: return PhoneTaskStatus(R.string.phone_task_reply)
+                } ?: return if (sent) unverified else PhoneTaskStatus(R.string.phone_task_reply)
+            if (sent) {
+                val verified =
+                    action is VisionAction.Finish && action.success && message != null &&
+                        reviewMessage(client, config, message, imageUrl, "finish") == WeChatMessageReview.SENT
+                return if (verified) {
+                    PhoneTaskStatus(
+                        R.string.phone_task_finished,
+                        detail = getString(R.string.phone_task_wechat_sent),
+                    )
+                } else {
+                    unverified
+                }
+            }
             when (action) {
                 is VisionAction.Finish -> {
+                    if (message != null) return PhoneTaskStatus(R.string.phone_task_takeover)
                     return TaskResult.Finished(action.success, action.summary).toStatus()
                 }
 
@@ -254,40 +321,29 @@ class PhoneTaskService : Service() {
                 }
 
                 is VisionAction.Tap -> {
-                    val decision =
-                        WeChatTask.tapDecision(permission, action) {
-                            reviewVisionTarget(client, config, action, imageUrl)
+                    if (message != null) {
+                        if (WeChatTask.needsManualAction(action.label) ||
+                            reviewMessage(client, config, message, imageUrl, "tap", action) != WeChatMessageReview.NAVIGATION
+                        ) {
+                            return PhoneTaskStatus(R.string.phone_task_takeover)
                         }
-                    if (decision == WeChatTapDecision.TAKE_OVER) return PhoneTaskStatus(R.string.phone_task_takeover)
-                    if (decision == WeChatTapDecision.CONFIRM) {
-                        if (!reviewTap(action, image)) return PhoneTaskStatus(R.string.phone_task_stopped)
-                        delay(950)
+                    } else {
+                        val decision =
+                            WeChatTask.tapDecision(permission, action) {
+                                reviewVisionTarget(client, config, action, imageUrl)
+                            }
+                        if (decision == WeChatTapDecision.TAKE_OVER) return PhoneTaskStatus(R.string.phone_task_takeover)
+                        if (decision == WeChatTapDecision.CONFIRM) {
+                            if (!reviewTap(action, image)) return PhoneTaskStatus(R.string.phone_task_stopped)
+                            delay(950)
+                        }
                     }
                     showStep(index + 1, R.string.phone_task_phase_tap)
-                    feedback =
-                        PhoneTaskOverlayService.withoutOverlay {
-                            val current = ShizukuConnection.withScreenService { it.captureScreen() }
-                            val currentImage = current.image?.softwareImage()
-                            val stillCurrent =
-                                withContext(Dispatchers.Default) {
-                                    currentImage != null &&
-                                        currentImage.fingerprint() == fingerprint &&
-                                        image.sameTapArea(currentImage, action)
-                                }
-                            when {
-                                current.packageName != frame.packageName || !stillCurrent -> {
-                                    "核对期间画面已改变，没有点按。"
-                                }
-
-                                ShizukuConnection.withScreenService { it.tap(current.id, action.x, action.y) } -> {
-                                    "已点按所选位置，检查新画面。"
-                                }
-
-                                else -> {
-                                    "点按未执行，请重新观察。"
-                                }
-                            }
+                    val applied =
+                        onUnchangedWeChatFrame(image, action) { id ->
+                            ShizukuConnection.withScreenService { it.tap(id, action.x, action.y) }
                         }
+                    feedback = if (applied) "已点按所选位置，检查新画面。" else "画面变化或点按失败，重新观察。"
                 }
 
                 is VisionAction.Scroll -> {
@@ -304,19 +360,91 @@ class PhoneTaskService : Service() {
                         }
                     feedback = if (applied) "已滑动，检查新画面。" else "滑动未执行，请重新观察。"
                 }
+
+                is VisionAction.Type -> {
+                    checkNotNull(message)
+                    if (if (action.recipient) searched else composed) return PhoneTaskStatus(R.string.phone_task_takeover)
+                    val command = if (action.recipient) "type_recipient" else "type_message"
+                    val expected = if (action.recipient) WeChatMessageReview.RECIPIENT_FIELD else WeChatMessageReview.MESSAGE_FIELD
+                    if (reviewMessage(client, config, message, imageUrl, command) != expected) {
+                        return PhoneTaskStatus(R.string.phone_task_takeover)
+                    }
+                    showStep(
+                        index + 1,
+                        if (action.recipient) R.string.phone_task_phase_search_contact else R.string.phone_task_phase_edit_message,
+                    )
+                    val text = if (action.recipient) message.recipient else message.message
+                    val applied =
+                        onUnchangedWeChatFrame(image) { id ->
+                            ShizukuConnection.withScreenService { it.typeWeChatText(id, text) }
+                        }
+                    if (applied) {
+                        if (action.recipient) searched = true else composed = true
+                        feedback = if (action.recipient) "已输入收件人，请核对搜索结果。" else "已输入正文，请核对收件人、正文和发送按钮。"
+                    } else {
+                        feedback = "输入未执行，重新检查微信是否仍在前台、输入框是否聚焦。"
+                    }
+                }
+
+                is VisionAction.Send -> {
+                    checkNotNull(message)
+                    val target = VisionAction.Tap(action.x, action.y, "")
+                    if (!composed || reviewMessage(client, config, message, imageUrl, "send", target) != WeChatMessageReview.SEND_BUTTON) {
+                        return PhoneTaskStatus(R.string.phone_task_takeover)
+                    }
+                    if (permission == PhoneTaskPermission.IMPORTANT_ONLY) {
+                        val state =
+                            PhoneTaskStatus(
+                                R.string.phone_task_confirm_send,
+                                running = true,
+                                review = PhoneTaskReview.Send(message),
+                                progress = progress(R.string.phone_task_confirm_send, waiting = true),
+                            )
+                        if (!awaitConfirmation(state)) return PhoneTaskStatus(R.string.phone_task_stopped)
+                        delay(950)
+                    }
+                    showStep(index + 1, R.string.phone_task_phase_send)
+                    val applied =
+                        onUnchangedWeChatFrame(image, target, exact = true) { id ->
+                            ShizukuConnection.withScreenService { it.tap(id, action.x, action.y) }
+                        }
+                    if (!applied) return unverified
+                    sent = true
+                    feedback = "已点按一次发送。只检查结果，不要再次发送。"
+                }
             }
             delay(650)
         }
         return PhoneTaskStatus(R.string.phone_task_limit)
     }
 
+    private suspend fun onUnchangedWeChatFrame(
+        image: Bitmap,
+        tap: VisionAction.Tap? = null,
+        exact: Boolean = false,
+        action: suspend (Long) -> Boolean,
+    ): Boolean =
+        PhoneTaskOverlayService.withoutOverlay {
+            val current = ShizukuConnection.withScreenService { it.captureScreen() }
+            if (current.packageName != WECHAT_PACKAGE) return@withoutOverlay false
+            val currentImage = current.image?.softwareImage() ?: return@withoutOverlay false
+            val unchanged =
+                withContext(Dispatchers.Default) {
+                    if (exact) {
+                        image.sameContent(currentImage)
+                    } else {
+                        image.similarTo(currentImage) && (tap == null || image.sameTapArea(currentImage, tap))
+                    }
+                }
+            currentCoroutineContext().ensureActive()
+            unchanged && action(current.id)
+        }
+
     private suspend fun reviewTap(
         action: VisionAction.Tap,
         image: Bitmap,
-    ): Boolean {
-        val answer = CompletableDeferred<Boolean>()
-        pendingTap = answer
-        show(
+    ): Boolean =
+        awaitConfirmation(
             PhoneTaskStatus(
                 R.string.phone_task_review_tap,
                 running = true,
@@ -324,6 +452,11 @@ class PhoneTaskService : Service() {
                 progress = progress(R.string.phone_task_phase_wait_tap, waiting = true),
             ),
         )
+
+    private suspend fun awaitConfirmation(state: PhoneTaskStatus): Boolean {
+        val answer = CompletableDeferred<Boolean>()
+        pendingTap = answer
+        show(state)
         if (!PhoneTaskOverlayService.isVisible && !getSystemService(NotificationManager::class.java).areNotificationsEnabled()) {
             Toast.makeText(this, R.string.phone_task_return_to_enco, Toast.LENGTH_LONG).show()
         }
@@ -332,6 +465,29 @@ class PhoneTaskService : Service() {
         } finally {
             pendingTap = null
         }
+    }
+
+    private suspend fun reviewMessage(
+        client: ChatClient,
+        config: ModelConfig,
+        message: WeChatDraft,
+        image: String,
+        action: String,
+        target: VisionAction.Tap? = null,
+    ): WeChatMessageReview {
+        val input =
+            buildJsonObject {
+                put("recipient", message.recipient)
+                put("message", message.message)
+                put("action", action)
+                if (target != null) {
+                    put("x", target.x)
+                    put("y", target.y)
+                }
+            }
+        return WeChatTask.parseMessageReview(
+            collectReply(client.streamImage(config, WeChatTask.messageGuardPrompt, input.toString(), image)),
+        )
     }
 
     private suspend fun reviewVisionTarget(
@@ -358,11 +514,23 @@ class PhoneTaskService : Service() {
         goal: String,
         feedback: String,
         image: String,
+        message: WeChatDraft?,
     ): VisionAction? {
         var note = feedback
         repeat(3) {
-            val reply = collectReply(client.streamImage(config, WeChatTask.visionPrompt, "goal: $goal\n上一步: $note", image))
-            WeChatTask.parseVision(reply)?.let { return it }
+            val input =
+                if (message == null) {
+                    "goal: $goal\n上一步: $note"
+                } else {
+                    buildJsonObject {
+                        put("recipient", message.recipient)
+                        put("message", message.message)
+                        put("previous_step", note)
+                    }.toString()
+                }
+            val prompt = if (message == null) WeChatTask.visionPrompt else WeChatTask.messagePrompt
+            val reply = collectReply(client.streamImage(config, prompt, input, image))
+            WeChatTask.parseVision(reply, allowMessage = message != null)?.let { return it }
             note = "上一次输出无法解析，请只返回动作 JSON。"
         }
         return null
@@ -409,6 +577,39 @@ class PhoneTaskService : Service() {
         } finally {
             if (sample !== this) sample.recycle()
         }
+    }
+
+    private fun Bitmap.similarTo(other: Bitmap): Boolean {
+        if (width != other.width || height != other.height) return false
+        val first = Bitmap.createScaledBitmap(this, 48, 80, true)
+        val second = Bitmap.createScaledBitmap(other, 48, 80, true)
+        return try {
+            var changes = 0
+            for (y in 4 until 79) {
+                for (x in 0 until 48) {
+                    val a = first.getPixel(x, y)
+                    val b = second.getPixel(x, y)
+                    if (kotlin.math.abs((a and 255) - (b and 255)) > 16 && ++changes > 24) return false
+                }
+            }
+            true
+        } finally {
+            if (first !== this) first.recycle()
+            if (second !== other) second.recycle()
+        }
+    }
+
+    private fun Bitmap.sameContent(other: Bitmap): Boolean {
+        if (width != other.width || height != other.height) return false
+        val top = height / 25
+        val expected = IntArray(width)
+        val actual = IntArray(width)
+        for (y in top until height) {
+            getPixels(expected, 0, width, 0, y, width, 1)
+            other.getPixels(actual, 0, width, 0, y, width, 1)
+            if (!expected.contentEquals(actual)) return false
+        }
+        return true
     }
 
     private fun Bitmap.sameTapArea(
@@ -481,6 +682,7 @@ class PhoneTaskService : Service() {
         internal const val KIND = "kind"
         internal const val PERMISSION = "permission"
         internal const val WECHAT_PACKAGE = "com.tencent.mm"
+        internal const val GMAIL_PACKAGE = GmailInboxReader.PACKAGE
         private const val STOP = "xyz.her3.enco.action.STOP_PHONE_TASK"
         private const val CHANNEL = "phone_task"
         private const val NOTIFICATION = 2
@@ -492,10 +694,6 @@ class PhoneTaskService : Service() {
 
         internal fun answerTap(allow: Boolean) {
             pendingTap?.complete(allow)
-        }
-
-        internal fun dismissDraft() {
-            if (status.value.review is PhoneTaskReview.Draft) update(PhoneTaskStatus(R.string.phone_task_idle))
         }
 
         private fun update(state: PhoneTaskStatus) {

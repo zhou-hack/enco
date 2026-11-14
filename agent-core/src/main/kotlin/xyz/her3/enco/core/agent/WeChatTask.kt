@@ -16,6 +16,8 @@ enum class WeChatTapDecision { EXECUTE, CONFIRM, TAKE_OVER }
 
 enum class WeChatTapReview { NAVIGATION, UNCERTAIN, TAKE_OVER }
 
+enum class WeChatMessageReview { NAVIGATION, RECIPIENT_FIELD, MESSAGE_FIELD, SEND_BUTTON, SENT, TAKE_OVER }
+
 sealed interface VisionAction {
     data class Tap(
         val x: Int,
@@ -32,6 +34,15 @@ sealed interface VisionAction {
         val summary: String,
     ) : VisionAction
 
+    data class Type(
+        val recipient: Boolean,
+    ) : VisionAction
+
+    data class Send(
+        val x: Int,
+        val y: Int,
+    ) : VisionAction
+
     data object TakeOver : VisionAction
 }
 
@@ -39,6 +50,8 @@ object WeChatTask {
     val draftPrompt: String = prompt("wechat-draft")
     val visionPrompt: String = prompt("wechat-vision")
     val tapGuardPrompt: String = prompt("wechat-tap-guard")
+    val messagePrompt: String = prompt("wechat-message")
+    val messageGuardPrompt: String = prompt("wechat-message-guard")
 
     private val takeover =
         Regex(
@@ -90,15 +103,29 @@ object WeChatTask {
             else -> WeChatTapReview.TAKE_OVER
         }
 
+    fun parseMessageReview(reply: String): WeChatMessageReview =
+        when (parse(reply)?.text("decision", 24)) {
+            "navigation" -> WeChatMessageReview.NAVIGATION
+            "recipient_field" -> WeChatMessageReview.RECIPIENT_FIELD
+            "message_field" -> WeChatMessageReview.MESSAGE_FIELD
+            "send_button" -> WeChatMessageReview.SEND_BUTTON
+            "sent" -> WeChatMessageReview.SENT
+            else -> WeChatMessageReview.TAKE_OVER
+        }
+
     fun parseDraft(reply: String): WeChatDraft? {
         val fields = parse(reply) ?: return null
         val recipient = fields.text("recipient", 80) ?: return null
-        val message = fields.text("message", 500) ?: return null
+        val message = (fields["message"] as? JsonPrimitive)?.takeIf { it.isString }?.content ?: return null
+        if (message.isBlank() || message.length > 500) return null
         if (recipient.any(Char::isISOControl) || message.any { it.isISOControl() && it != '\n' }) return null
         return WeChatDraft(recipient, message)
     }
 
-    fun parseVision(reply: String): VisionAction? {
+    fun parseVision(
+        reply: String,
+        allowMessage: Boolean = false,
+    ): VisionAction? {
         val fields = parse(reply) ?: return null
         return when (fields.text("action", 20)) {
             "tap" -> {
@@ -124,6 +151,19 @@ object WeChatTask {
 
             "take_over" -> {
                 VisionAction.TakeOver
+            }
+
+            "type_recipient" -> {
+                if (allowMessage) VisionAction.Type(recipient = true) else null
+            }
+
+            "type_message" -> {
+                if (allowMessage) VisionAction.Type(recipient = false) else null
+            }
+
+            "send" -> {
+                if (!allowMessage) return null
+                VisionAction.Send(fields.coordinate("x") ?: return null, fields.coordinate("y") ?: return null)
             }
 
             else -> {

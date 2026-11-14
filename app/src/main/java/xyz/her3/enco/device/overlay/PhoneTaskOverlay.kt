@@ -22,14 +22,12 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -49,12 +47,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import xyz.her3.enco.R
-import xyz.her3.enco.device.service.PhoneTaskProgress
-import xyz.her3.enco.device.service.PhoneTaskReview
 import xyz.her3.enco.device.service.PhoneTaskStatus
 import xyz.her3.enco.ui.ControlIcon
 import xyz.her3.enco.ui.ControlSymbol
-import xyz.her3.enco.ui.phaseText
 import xyz.her3.enco.ui.statusText
 import xyz.her3.enco.ui.theme.EncoText
 
@@ -62,6 +57,7 @@ internal class PhoneTaskOverlay(
     private val context: Context,
     private val onOpen: () -> Unit,
     private val onStop: () -> Unit,
+    private val onDismiss: () -> Unit,
     private val onPermissionRevoked: () -> Unit,
 ) {
     private val windowManager = context.getSystemService(WindowManager::class.java)
@@ -108,32 +104,31 @@ internal class PhoneTaskOverlay(
         contentOwner.attach(view)
         view.visibility = View.INVISIBLE
         view.setOnTouchListener { _, event ->
-            if (event.actionMasked == MotionEvent.ACTION_OUTSIDE) expanded = false
+            if (event.actionMasked == MotionEvent.ACTION_OUTSIDE) {
+                if (status.running) {
+                    expanded = false
+                } else if (status.message != R.string.phone_task_idle) {
+                    onDismiss()
+                }
+            }
             false
         }
         view.setContent {
             val current = status
-            val toggle = { expanded = !expanded }
-            if (expanded) {
-                PhoneTaskMenu(
+            if (expanded || !current.running) {
+                PhoneTaskIsland(
                     status = current,
-                    onCollapse = { expanded = false },
-                    onOpen = {
-                        expanded = false
-                        onOpen()
+                    onClick = {
+                        when {
+                            !current.running -> onDismiss()
+                            current.review != null -> onOpen()
+                            else -> expanded = false
+                        }
                     },
-                    onStop = {
-                        expanded = false
-                        onStop()
-                    },
+                    onStop = onStop,
                 )
             } else {
-                val progress = current.progress
-                if (progress == null) {
-                    PhoneTaskBall(waiting = current.review != null, onClick = toggle)
-                } else {
-                    PhoneTaskCapsule(progress, onClick = toggle)
-                }
+                PhoneTaskBall(waiting = current.review != null, onClick = { expanded = true })
             }
         }
         windowManager.addView(view, params)
@@ -153,7 +148,7 @@ internal class PhoneTaskOverlay(
     }
 
     fun render(status: PhoneTaskStatus) {
-        if (!status.running && this.status.running) expanded = false
+        if (status.running && !this.status.running) expanded = false
         this.status = status
         refreshVisibility()
     }
@@ -169,8 +164,13 @@ internal class PhoneTaskOverlay(
         if (!view.isAttachedToWindow) return
         val unlocked = power.isInteractive && !keyguard.isKeyguardLocked
         if (!unlocked) expanded = false
-        val show = !capturing && unlocked && Settings.canDrawOverlays(context)
+        val show = status.message != R.string.phone_task_idle && !capturing && unlocked && Settings.canDrawOverlays(context)
         view.visibility = if (show) View.VISIBLE else View.INVISIBLE
+        val alpha = if (show) 1f else 0f
+        if (params.alpha != alpha) {
+            params.alpha = alpha
+            windowManager.updateViewLayout(view, params)
+        }
     }
 
     fun close() {
@@ -210,19 +210,31 @@ private fun PhoneTaskBall(
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
     ) {
-        ControlIcon(ControlSymbol.PHONE, Modifier.size(21.dp), accent)
+        EncoMark(accent)
     }
 }
 
 @Composable
-private fun PhoneTaskCapsule(
-    progress: PhoneTaskProgress,
+private fun PhoneTaskIsland(
+    status: PhoneTaskStatus,
     onClick: () -> Unit,
+    onStop: () -> Unit,
 ) {
-    val accent = if (progress.waiting) capsuleWaiting else capsuleAccent
-    val text = progress.phaseText()
-    val app = stringResource(progress.app)
-    val open = stringResource(R.string.phone_task_overlay_menu)
+    val accent =
+        when {
+            status.review != null -> capsuleWaiting
+            status.message == R.string.phone_task_finished -> Color(0xFF8EE3B1)
+            else -> capsuleAccent
+        }
+    val action = stringResource(if (status.running) R.string.phone_task_stop else R.string.phone_task_overlay_dismiss)
+    val click =
+        stringResource(
+            when {
+                !status.running -> R.string.phone_task_overlay_dismiss
+                status.review != null -> R.string.phone_task_overlay_review
+                else -> R.string.phone_task_overlay_collapse
+            },
+        )
     Row(
         modifier =
             Modifier
@@ -230,90 +242,53 @@ private fun PhoneTaskCapsule(
                 .widthIn(max = 340.dp)
                 .clip(CircleShape)
                 .background(capsuleBackground)
-                .border(1.dp, accent.copy(alpha = .40f), CircleShape)
-                .clickable(role = Role.Button, onClickLabel = open, onClick = onClick)
-                .heightIn(min = 48.dp)
-                .padding(horizontal = 14.dp),
-        horizontalArrangement = Arrangement.spacedBy(7.dp),
+                .border(1.dp, accent.copy(alpha = .40f), CircleShape),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.size(7.dp).background(accent, CircleShape))
-        EncoText(app, size = 13.sp, color = accent, weight = FontWeight.Bold, maxLines = 1)
-        EncoText(text, Modifier.weight(1f, fill = false), 13.sp, capsuleText, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        ControlIcon(ControlSymbol.NEXT, Modifier.size(13.dp), accent)
-    }
-}
-
-@Composable
-private fun PhoneTaskMenu(
-    status: PhoneTaskStatus,
-    onCollapse: () -> Unit,
-    onOpen: () -> Unit,
-    onStop: () -> Unit,
-) {
-    val accent = if (status.review != null) capsuleWaiting else capsuleAccent
-    val shape = RoundedCornerShape(20.dp)
-    val collapse = stringResource(R.string.phone_task_overlay_collapse)
-    Column(
-        modifier =
-            Modifier
-                .padding(horizontal = 12.dp)
-                .widthIn(max = 340.dp)
-                .clip(shape)
-                .background(capsuleBackground)
-                .border(1.dp, accent.copy(alpha = .40f), shape)
-                .padding(horizontal = 12.dp, vertical = 4.dp),
-    ) {
         Row(
+            Modifier
+                .weight(1f, fill = false)
+                .clickable(role = Role.Button, onClickLabel = click, onClick = onClick)
+                .heightIn(min = 48.dp)
+                .padding(start = 10.dp, end = 5.dp),
+            horizontalArrangement = Arrangement.spacedBy(9.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            EncoMark(accent)
             EncoText(
-                status.statusText(),
-                Modifier.weight(1f, fill = false).padding(start = 4.dp),
+                if (status.message ==
+                    R.string.phone_task_finished
+                ) {
+                    stringResource(R.string.phone_task_overlay_completed)
+                } else {
+                    status.statusText()
+                },
+                Modifier.weight(1f, fill = false),
                 size = 13.sp,
-                color = accent,
-                maxLines = 2,
+                color = capsuleText,
+                weight = FontWeight.SemiBold,
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Box(
-                Modifier
-                    .size(48.dp)
-                    .clickable(role = Role.Button, onClick = onCollapse)
-                    .semantics { contentDescription = collapse },
-                contentAlignment = Alignment.Center,
-            ) {
-                ControlIcon(ControlSymbol.CLOSE, Modifier.size(17.dp), capsuleText)
-            }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            val openLabel =
-                when (status.review) {
-                    is PhoneTaskReview.Tap -> R.string.phone_task_overlay_review
-                    is PhoneTaskReview.Draft -> R.string.phone_task_draft_title
-                    null -> R.string.phone_task_overlay_open
-                }
-            OverlayAction(openLabel, accent, onOpen)
-            if (status.running || status.review != null) {
-                OverlayAction(R.string.phone_task_stop, capsuleText, onStop)
-            }
+        Box(
+            Modifier
+                .size(48.dp)
+                .clickable(role = Role.Button, onClick = if (status.running) onStop else onClick)
+                .semantics { contentDescription = action },
+            contentAlignment = Alignment.Center,
+        ) {
+            ControlIcon(if (status.running) ControlSymbol.STOP else ControlSymbol.CLOSE, Modifier.size(17.dp), accent)
         }
     }
 }
 
 @Composable
-private fun OverlayAction(
-    label: Int,
-    color: Color,
-    onClick: () -> Unit,
-) {
+private fun EncoMark(accent: Color) {
     Box(
-        Modifier
-            .clip(RoundedCornerShape(10.dp))
-            .clickable(role = Role.Button, onClick = onClick)
-            .heightIn(min = 48.dp)
-            .padding(horizontal = 8.dp),
+        Modifier.size(28.dp).background(accent, CircleShape),
         contentAlignment = Alignment.Center,
     ) {
-        EncoText(stringResource(label), color = color, size = 13.sp, weight = FontWeight.SemiBold)
+        EncoText("e", size = 18.sp, color = capsuleBackground, weight = FontWeight.Bold)
     }
 }

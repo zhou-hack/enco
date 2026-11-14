@@ -45,6 +45,13 @@ class EncoShellService : IEncoShellService.Stub() {
 
     override fun destroy() = exitProcess(0)
 
+    override fun typeWeChatText(
+        frameId: Long,
+        text: String,
+    ): Boolean = runAsService { screen.typeWeChatText(frameId, text) }
+
+    override fun readGmailInbox(count: Int): Array<String>? = runAsService { screen.readGmailInbox(count) }
+
     @Synchronized
     private fun <T> runAsService(action: () -> T): T {
         val identity = Binder.clearCallingIdentity()

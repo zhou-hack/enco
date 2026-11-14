@@ -1,13 +1,17 @@
 package xyz.her3.enco.device.shell
 
 import android.app.UiAutomation
+import android.content.ClipData
 import android.graphics.Bitmap
 import android.graphics.Point
+import android.os.Bundle
 import android.os.Looper
+import android.os.PersistableBundle
 import android.os.SystemClock
 import android.util.Log
 import android.view.Display
 import android.view.InputDevice
+import android.view.KeyCharacterMap
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -15,6 +19,8 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 internal class MainScreenAutomation {
+    fun readGmailInbox(count: Int): Array<String>? = useAutomation { GmailInboxReader(it).read(count) }
+
     private data class Target(
         val size: Point,
         val rotation: Int,
@@ -157,6 +163,91 @@ internal class MainScreenAutomation {
             val pressed = automation.injectInputEvent(down, true)
             automation.injectInputEvent(up, true) && pressed
         }
+
+    @Suppress("DEPRECATION")
+    fun typeWeChatText(
+        id: Long,
+        text: String,
+    ): Boolean {
+        if (text.length !in 1..500 || text.any { it.isISOControl() && it != '\n' }) return false
+        val expected = target
+        target = null
+        if (id != frameId || expected?.windowPackage != "com.tencent.mm") return false
+        return useAutomation { automation ->
+            if (awaitTarget(automation) != expected) return@useAutomation false
+            val root = awaitRoot(automation) ?: return@useAutomation false
+            val field =
+                try {
+                    root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+                } finally {
+                    root.recycle()
+                }
+            if (field != null) {
+                try {
+                    if (field.isPassword) return@useAutomation false
+                    if (field.packageName?.toString() == expected.windowPackage && field.isEditable) {
+                        if (!field.text.isNullOrEmpty() && !field.isShowingHintText) return@useAutomation false
+                        val args = Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text) }
+                        if (field.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) return@useAutomation true
+                    }
+                } finally {
+                    field.recycle()
+                }
+            }
+            val events = KeyCharacterMap.load(KeyCharacterMap.VIRTUAL_KEYBOARD).getEvents(text.toCharArray())
+            if (events != null && '\n' !in text) {
+                events.all {
+                    val applied = automation.injectInputEvent(KeyEvent.changeTimeRepeat(it, SystemClock.uptimeMillis(), 0), true)
+                    if (it.action == KeyEvent.ACTION_UP) SystemClock.sleep(25)
+                    applied
+                }
+            } else {
+                pasteText(automation, text)
+            }
+        }
+    }
+
+    private fun pasteText(
+        automation: UiAutomation,
+        text: String,
+    ): Boolean {
+        val clipboard = WeChatClipboard()
+        val hasClip = clipboard.hasClip()
+        val previous = clipboard.read()
+        if (hasClip && previous == null) return false
+        if (previous != null && (0 until previous.itemCount).any { previous.getItemAt(it).uri != null }) return false
+        val clip =
+            ClipData.newPlainText("enco", text).apply {
+                description.extras = PersistableBundle().apply { putBoolean("android.content.extra.IS_SENSITIVE", true) }
+            }
+        return try {
+            clipboard.write(clip)
+            if (clipboard
+                    .read()
+                    ?.getItemAt(0)
+                    ?.text
+                    ?.toString() != text
+            ) {
+                Log.w("enco.device", "无法核对微信临时剪贴板")
+                return false
+            }
+            val time = SystemClock.uptimeMillis()
+            val down = KeyEvent(time, time, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_V, 0, KeyEvent.META_CTRL_ON)
+            val pressed = automation.injectInputEvent(down, true)
+            val released = automation.injectInputEvent(KeyEvent.changeAction(down, KeyEvent.ACTION_UP), true)
+            SystemClock.sleep(300)
+            pressed && released
+        } finally {
+            if (clipboard
+                    .read()
+                    ?.getItemAt(0)
+                    ?.text
+                    ?.toString() == text
+            ) {
+                clipboard.write(previous)
+            }
+        }
+    }
 
     @Suppress("DEPRECATION")
     private fun awaitTarget(automation: UiAutomation): Target {

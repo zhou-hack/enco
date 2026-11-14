@@ -5,11 +5,11 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <queries>
         <package android:name="moe.shizuku.privileged.api" />
         <package android:name="com.tencent.mm" />
+        <package android:name="com.google.android.gm" />
         <intent>
             <action android:name="android.settings.SETTINGS" />
         </intent>
@@ -48,16 +48,8 @@
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Persistent visible floating control for opening, reviewing and stopping phone tasks" />
+                android:value="Visible control for reviewing, stopping and dismissing user-approved phone tasks" />
         </service>
-        <receiver
-            android:name=".device.overlay.RestorePhoneTaskOverlayReceiver"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
-            </intent-filter>
-        </receiver>
         <activity
             android:name=".ui.MainActivity"
             android:windowSoftInputMode="adjustResize"

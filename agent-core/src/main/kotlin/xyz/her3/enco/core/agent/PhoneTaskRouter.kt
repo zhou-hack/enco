@@ -5,7 +5,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import xyz.her3.enco.core.protocol.encoJson
 
-enum class PhoneTaskKind { SETTINGS, WECHAT_NAVIGATION, WECHAT_MESSAGE }
+enum class PhoneTaskKind { SETTINGS, WECHAT_NAVIGATION, WECHAT_MESSAGE, GMAIL_INBOX }
 
 enum class PhoneTaskPermission { FULL, IMPORTANT_ONLY }
 
@@ -38,6 +38,7 @@ object PhoneTaskRouter {
                 "settings" -> PhoneTaskKind.SETTINGS
                 "wechat_navigation" -> PhoneTaskKind.WECHAT_NAVIGATION
                 "wechat_message" -> PhoneTaskKind.WECHAT_MESSAGE
+                "gmail_inbox" -> PhoneTaskKind.GMAIL_INBOX
                 else -> return null
             }
         val goal = (decision["goal"] as? JsonPrimitive)?.takeIf { it.isString }?.content?.trim() ?: return null

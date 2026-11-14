@@ -12,5 +12,7 @@ interface IEncoShellService {
     boolean pressHome() = 5;
     @nullable SettingsFrame observeSettings() = 6;
     boolean performSettingsAction(long frameId, int target, int command) = 7;
+    boolean typeWeChatText(long frameId, String text) = 8;
+    @nullable String[] readGmailInbox(int count) = 9;
     void destroy() = 16777114;
 }
