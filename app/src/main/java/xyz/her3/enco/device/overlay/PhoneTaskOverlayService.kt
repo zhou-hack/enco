@@ -38,24 +38,36 @@ class PhoneTaskOverlayService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        if (overlay != null) return START_NOT_STICKY
+        if (taskOverlay != null || shortcutOverlay != null) return START_NOT_STICKY
         startForeground(NOTIFICATION, notification())
-        val ball =
+        val task =
             PhoneTaskOverlay(
                 this,
                 onOpen = ::openEnco,
                 onStop = { stopService(Intent(this, PhoneTaskService::class.java)) },
-                onDismiss = { stopSelf() },
+                onDismiss = { taskOverlay?.dismissResult() },
+                onPermissionRevoked = { stopSelf() },
+            )
+        val shortcut =
+            ScheduleShortcutOverlay(
+                this,
+                onScheduleClick = ::onScheduleScreenshotClick,
                 onPermissionRevoked = { stopSelf() },
             )
         try {
-            ball.attach()
-            overlay = ball
-            ball.setCaptureHidden(captureMutex.isLocked)
-            scope.launch { PhoneTaskService.status.collect(ball::render) }
+            task.attach()
+            shortcut.attach()
+            taskOverlay = task
+            shortcutOverlay = shortcut
+            task.setCaptureHidden(captureMutex.isLocked)
+            shortcut.setCaptureHidden(captureMutex.isLocked)
+            scope.launch { PhoneTaskService.status.collect(task::render) }
         } catch (error: RuntimeException) {
-            Log.w("enco.device", "无法打开常驻悬浮球", error)
-            ball.close()
+            Log.w("enco.device", "无法打开快捷悬浮球与任务状态", error)
+            task.close()
+            shortcut.close()
+            taskOverlay = null
+            shortcutOverlay = null
             stopSelf()
             return START_NOT_STICKY
         }
@@ -64,14 +76,20 @@ class PhoneTaskOverlayService : Service() {
 
     override fun onDestroy() {
         scope.cancel()
-        overlay?.close()
-        overlay = null
+        taskOverlay?.close()
+        shortcutOverlay?.close()
+        taskOverlay = null
+        shortcutOverlay = null
         super.onDestroy()
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        overlay?.onConfigurationChanged()
+        shortcutOverlay?.onConfigurationChanged()
+    }
+
+    private fun onScheduleScreenshotClick() {
+        Toast.makeText(this, R.string.schedule_shortcut_reserved, Toast.LENGTH_SHORT).show()
     }
 
     private fun openEnco() {
@@ -102,29 +120,34 @@ class PhoneTaskOverlayService : Service() {
     companion object {
         private const val CHANNEL = "phone_task_overlay"
         private const val NOTIFICATION = 3
-        private var overlay: PhoneTaskOverlay? = null
+        private var taskOverlay: PhoneTaskOverlay? = null
+        private var shortcutOverlay: ScheduleShortcutOverlay? = null
         private val captureMutex = Mutex()
-        internal val isVisible: Boolean get() = overlay?.isVisible == true
+        internal val isVisible: Boolean get() = taskOverlay?.isVisible == true
+        private val anyOverlayVisible: Boolean
+            get() = taskOverlay?.isVisible == true || shortcutOverlay?.isVisible == true
 
         internal fun startIfAllowed(context: Context) {
-            if (!Settings.canDrawOverlays(context) || overlay != null) return
+            if (!Settings.canDrawOverlays(context) || taskOverlay != null || shortcutOverlay != null) return
             try {
                 context.startForegroundService(Intent(context, PhoneTaskOverlayService::class.java))
             } catch (error: RuntimeException) {
-                Log.w("enco.device", "系统未能启动任务悬浮球", error)
+                Log.w("enco.device", "系统未能启动悬浮球", error)
             }
         }
 
         internal suspend fun <T> withoutOverlay(action: suspend () -> T): T =
             captureMutex.withLock {
-                val wasVisible = isVisible
-                overlay?.setCaptureHidden(true)
+                val wasVisible = anyOverlayVisible
+                taskOverlay?.setCaptureHidden(true)
+                shortcutOverlay?.setCaptureHidden(true)
                 try {
-                    // 等悬浮球退出合成，再截图或注入触摸。
+                    // 等两个悬浮窗退出合成，再截图或注入触摸。
                     if (wasVisible) delay(200)
                     action()
                 } finally {
-                    overlay?.setCaptureHidden(false)
+                    taskOverlay?.setCaptureHidden(false)
+                    shortcutOverlay?.setCaptureHidden(false)
                 }
             }
     }

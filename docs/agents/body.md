@@ -61,7 +61,8 @@ Agent、模型、记忆、校园逻辑见 [brain.md](brain.md)。
 - Jetpack Compose + Material 3，界面文字全部放进 `strings.xml`。
 - 界面数据只来自 `AgentEvent` 事件流和 `MemoryStore`，不直接调用 Agent 的内部实现。
 - Agent 还没做好时，用 `debug` 源集里的 `FakeAgentEvents` 按脚本发出假事件，先把时间线、步骤卡片、确认流程做出来。
-- 悬浮球：无障碍服务开启时用 `TYPE_ACCESSIBILITY_OVERLAY`，否则用 `TYPE_APPLICATION_OVERLAY`；预览小窗只在 Shizuku 下出现，用 `TYPE_APPLICATION_OVERLAY`。截图前先隐藏悬浮球，避免截进图里。
+- 快捷悬浮球与手机任务状态条是两个独立窗口：快捷球在打开 App 或授权返回后默认显示，任务状态条只在非 idle 状态出现。悬浮球类型按后端选择 `TYPE_ACCESSIBILITY_OVERLAY` 或 `TYPE_APPLICATION_OVERLAY`；预览小窗只在 Shizuku 下出现，用 `TYPE_APPLICATION_OVERLAY`。
+- 截图或注入触摸前同时隐藏快捷球和任务状态条，避免截进图里或遮挡目标，结束后恢复。快捷球单击是日程截图问 AI 的预留入口，当前不截图、不上传。
 - Android 14 的前台服务必须声明类型（执行任务用 `specialUse`，语音用 `microphone`），并在清单里声明对应权限。
 
 ### 2.5 和大脑的对接点

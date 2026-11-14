@@ -48,7 +48,7 @@
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Visible control for reviewing, stopping and dismissing user-approved phone tasks" />
+                android:value="Persistent schedule shortcut and visible status controls for user-approved phone tasks" />
         </service>
         <activity
             android:name=".ui.MainActivity"

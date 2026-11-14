@@ -244,6 +244,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         activityResumed = true
         overlayAllowed = Settings.canDrawOverlays(this)
+        PhoneTaskOverlayService.startIfAllowed(this)
     }
 
     override fun onPause() {
