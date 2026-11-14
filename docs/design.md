@@ -178,7 +178,7 @@ Operator 必须输出 JSON，由 `agent-core` 校验后再执行：
 | 动作 | 参数 | 说明 |
 |---|---|---|
 | `tap` / `long_press` | `target`（元素编号）或 `x,y`（0–1000 归一化坐标） | 优先用元素编号，失败时退回坐标 |
-| `type` | `target`, `text`, `submit?` | 优先 `ACTION_SET_TEXT`，失败时用剪贴板粘贴 |
+| `type` | `target`, `text`, `submit?` | 将完整文本放入剪贴板，粘贴到已聚焦的目标输入框 |
 | `swipe` | `direction`, `distance?`, `target?` | 滚动列表或翻页 |
 | `back` / `home` | 无 | 系统导航 |
 | `launch` | `app`（名称或包名） | 直接启动 App，比在桌面找图标更稳 |
@@ -251,10 +251,12 @@ enco App 进程                                shell 助手进程（uid 2000，�
 | 读取控件树 | `UiAutomation` 读取当前窗口节点 | `uiautomator dump` |
 | 截图 | `UiAutomation.takeScreenshot` | `screencap -p` |
 | 点击 / 长按 / 滑动 | `UiAutomation.injectInputEvent` | `input tap` / `input swipe` |
-| 输入中文 | 对输入框节点执行 `ACTION_SET_TEXT` | 写剪贴板后发送粘贴键（`input text` 不支持中文） |
+| 输入文字 | 写入临时剪贴板后执行粘贴，完成后恢复原剪贴板 | 输入框未暴露粘贴动作时注入系统粘贴键 |
 | 返回 / 主页 | 注入按键事件 | `input keyevent` |
 | 启动 App | `am start` / `monkey -p` | – |
 | 被 `FLAG_SECURE` 保护的页面 | 截图为黑屏，交给用户接管 | – |
+
+粘贴前必须能读取并安全保存原纯文本剪贴板；Android 限制读取原正文时取消操作，避免覆盖后无法恢复。临时剪贴板带所有权标记，只恢复仍归 enco 所有的内容，不覆盖用户在此期间的新复制内容。
 
 **一键授权**：有了 shell 权限后，enco 可以自动开启其他权限，用户不用逐个去系统设置里找：
 
@@ -282,7 +284,7 @@ enco App 进程                                shell 助手进程（uid 2000，�
 | 读取控件树 | `getWindows()` / `rootInActiveWindow` |
 | 截图 | `AccessibilityService.takeScreenshot`（Android 11+，enco 自己拿到图片，不调用系统截图） |
 | 点击 / 长按 / 滑动 | `dispatchGesture` |
-| 输入中文 | `ACTION_SET_TEXT`，失败时写剪贴板后执行 `ACTION_PASTE` |
+| 输入文字 | 写入剪贴板后执行 `ACTION_PASTE` |
 | 返回 / 主页 | `performGlobalAction` |
 | 启动 App | 由无障碍服务启动 App 的启动 Intent |
 | 小窗 / 虚拟屏 | **不支持**，执行位置选择器里这两项置灰，提示“需要 Shizuku” |
@@ -305,7 +307,7 @@ enco App 进程                                shell 助手进程（uid 2000，�
 
 - 助手进程以 shell 身份创建虚拟屏，尺寸和主屏一致，画面输出到 `ImageReader`。截图直接从这里取最新一帧。
 - 创建时带上独立焦点（Android 14+）、受信任、内容随屏销毁等标志，保证 App 能正常启动并接收输入。
-- 输入文字优先对节点执行 `ACTION_SET_TEXT`，不依赖输入法。这样即使输入法只能显示在主屏上，也不影响虚拟屏里的输入。
+- 输入文字使用剪贴板粘贴到目标舞台中已聚焦的输入框，避免输入法改写文本。
 - 任务结束时，按用户选择把 App 移回主屏（“在主屏打开结果”），或者随虚拟屏一起关闭。
 
 **预览小窗**（仅虚拟屏模式，可开关）

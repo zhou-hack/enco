@@ -38,7 +38,7 @@ Agent、模型、记忆、校园逻辑见 [brain.md](brain.md)。
 ### 2.2 无障碍备用后端
 
 - 目的：**Shizuku 没运行时（例如手机刚重启），悬浮球截图和主屏任务仍然可用。**
-- `A11yDevice` 同样实现 `DeviceController`，只支持主屏：`takeScreenshot` 截图（enco 自己拿到 `Bitmap`，不调用系统截图）、`getWindows()` 读界面、`dispatchGesture` 手势、`ACTION_SET_TEXT` 输入、`performGlobalAction` 返回和主页。
+- `A11yDevice` 同样实现 `DeviceController`，只支持主屏：`takeScreenshot` 截图（enco 自己拿到 `Bitmap`，不调用系统截图）、`getWindows()` 读界面、`dispatchGesture` 手势、剪贴板粘贴、`performGlobalAction` 返回和主页。
 - 后端选择：Shizuku 可用就用 `ShizukuDevice`，否则用 `A11yDevice`，都不可用就只聊天。**任务进行中不切换后端**；Shizuku 恢复后，下一个任务再切回来。
 - 只有无障碍可用时，执行位置选择器里的“小窗”和“虚拟屏”置灰，提示“需要 Shizuku”。
 - 开启方式：Shizuku 运行时自动开启，并在服务被系统停掉时自动重开。从没启动过 Shizuku 时，引导页要教用户手动开启：Android 13+ 先在“应用信息”右上角菜单里点“允许受限制的设置”，再去无障碍设置里打开 enco。
@@ -54,7 +54,7 @@ Agent、模型、记忆、校园逻辑见 [brain.md](brain.md)。
 
 - 舞台对大脑透明：`Observation` 里的坐标统一按舞台归一化到 0–1000，截图和节点只包含舞台内的内容。
 - 选中的舞台失败时（App 拒绝在虚拟屏启动、小窗没生效），通过 `AgentEvent` 通知用户，并自动降级到主屏。
-- 输入文字优先用 `ACTION_SET_TEXT`，不依赖输入法，这样虚拟屏里也能输入。
+- 自动输入统一使用整段剪贴板粘贴。真机联调输入测试文本也用粘贴，输入后等界面稳定并核对文本。无法读取并保存原纯文本剪贴板时必须取消，不能覆盖后丢弃原内容。
 
 ### 2.4 界面
 

@@ -385,13 +385,13 @@ class PhoneTaskService : Service() {
                     val text = if (action.recipient) message.recipient else message.message
                     val applied =
                         onUnchangedWeChatFrame(image) { id ->
-                            ShizukuConnection.withScreenService { it.typeWeChatText(id, text) }
+                            ShizukuConnection.withScreenService { it.pasteWeChatText(id, text) }
                         }
                     if (applied) {
                         if (action.recipient) searched = true else composed = true
-                        feedback = if (action.recipient) "已输入收件人，请核对搜索结果。" else "已输入正文，请核对收件人、正文和发送按钮。"
+                        feedback = if (action.recipient) "已尝试粘贴收件人，请核对搜索结果。" else "已尝试粘贴正文，请核对收件人、正文和发送按钮。"
                     } else {
-                        feedback = "输入未执行，重新检查微信是否仍在前台、输入框是否聚焦。"
+                        feedback = "粘贴未执行或无法核实，重新检查微信是否仍在前台、输入框是否聚焦。"
                     }
                 }
 

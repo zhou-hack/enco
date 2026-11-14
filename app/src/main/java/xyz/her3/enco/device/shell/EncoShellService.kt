@@ -45,10 +45,10 @@ class EncoShellService : IEncoShellService.Stub() {
 
     override fun destroy() = exitProcess(0)
 
-    override fun typeWeChatText(
+    override fun pasteWeChatText(
         frameId: Long,
         text: String,
-    ): Boolean = runAsService { screen.typeWeChatText(frameId, text) }
+    ): Boolean = runAsService { screen.pasteWeChatText(frameId, text) }
 
     override fun readGmailInbox(count: Int): Array<String>? = runAsService { screen.readGmailInbox(count) }
 
