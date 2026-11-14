@@ -8,7 +8,6 @@ import android.app.Service
 import android.content.Intent
 import android.graphics.Bitmap
 import android.os.IBinder
-import android.provider.Settings
 import android.util.Base64
 import android.util.Log
 import android.widget.Toast
@@ -37,7 +36,7 @@ import xyz.her3.enco.core.agent.WeChatDraft
 import xyz.her3.enco.core.agent.WeChatTapDecision
 import xyz.her3.enco.core.agent.WeChatTapReview
 import xyz.her3.enco.core.agent.WeChatTask
-import xyz.her3.enco.device.overlay.PhoneTaskOverlay
+import xyz.her3.enco.device.overlay.PhoneTaskOverlayService
 import xyz.her3.enco.device.shizuku.ShizukuConnection
 import xyz.her3.enco.llm.ChatClient
 import xyz.her3.enco.llm.ChatException
@@ -78,7 +77,6 @@ internal sealed interface PhoneTaskReview {
 class PhoneTaskService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var job: Job? = null
-    private var overlay: PhoneTaskOverlay? = null
     private var appLabel = R.string.phone_task_app_settings
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -114,7 +112,6 @@ class PhoneTaskService : Service() {
         )
         update(PhoneTaskStatus(R.string.phone_task_running, running = true, progress = progress(initialPhase)))
         startForeground(NOTIFICATION, notification(status.value))
-        startOverlay()
         job =
             scope.launch {
                 try {
@@ -226,7 +223,7 @@ class PhoneTaskService : Service() {
         var unchanged = 0
         repeat(40) { index ->
             showStep(index + 1, R.string.phone_task_phase_read_wechat)
-            val frame = withOverlayHidden { ShizukuConnection.withScreenService { it.captureScreen() } }
+            val frame = PhoneTaskOverlayService.withoutOverlay { ShizukuConnection.withScreenService { it.captureScreen() } }
             if (frame.packageName != WECHAT_PACKAGE) return PhoneTaskStatus(R.string.phone_task_takeover)
             val image = frame.image?.softwareImage() ?: return PhoneTaskStatus(R.string.phone_task_screen)
             val fingerprint = withContext(Dispatchers.Default) { image.fingerprint() }
@@ -268,7 +265,7 @@ class PhoneTaskService : Service() {
                     }
                     showStep(index + 1, R.string.phone_task_phase_tap)
                     feedback =
-                        withOverlayHidden {
+                        PhoneTaskOverlayService.withoutOverlay {
                             val current = ShizukuConnection.withScreenService { it.captureScreen() }
                             val currentImage = current.image?.softwareImage()
                             val stillCurrent =
@@ -298,7 +295,7 @@ class PhoneTaskService : Service() {
                     val to = if (action.up) 340 else 730
                     showStep(index + 1, R.string.phone_task_phase_scroll)
                     val applied =
-                        withOverlayHidden {
+                        PhoneTaskOverlayService.withoutOverlay {
                             val current = ShizukuConnection.withScreenService { it.captureScreen() }
                             val currentImage = current.image?.softwareImage()
                             val stillCurrent = withContext(Dispatchers.Default) { currentImage?.fingerprint() == fingerprint }
@@ -327,7 +324,7 @@ class PhoneTaskService : Service() {
                 progress = progress(R.string.phone_task_phase_wait_tap, waiting = true),
             ),
         )
-        if (overlay?.isVisible != true && !getSystemService(NotificationManager::class.java).areNotificationsEnabled()) {
+        if (!PhoneTaskOverlayService.isVisible && !getSystemService(NotificationManager::class.java).areNotificationsEnabled()) {
             Toast.makeText(this, R.string.phone_task_return_to_enco, Toast.LENGTH_LONG).show()
         }
         return try {
@@ -380,35 +377,6 @@ class PhoneTaskService : Service() {
         return reply.toString()
     }
 
-    private fun startOverlay() {
-        if (!Settings.canDrawOverlays(this)) return
-        val capsule =
-            PhoneTaskOverlay(
-                this,
-                onOpen = {
-                    try {
-                        startActivity(taskActivityIntent())
-                    } catch (error: RuntimeException) {
-                        Log.w("enco.device", "无法从任务胶囊返回 enco", error)
-                        Toast.makeText(this, R.string.phone_task_overlay_open_failed, Toast.LENGTH_SHORT).show()
-                    }
-                },
-                onStop = ::cancelTask,
-            )
-        try {
-            capsule.attach()
-            overlay = capsule
-            scope.launch {
-                activityVisible.collect { visible -> capsule.render(status.value.progress, visible) }
-            }
-        } catch (error: RuntimeException) {
-            Log.w("enco.device", "无法打开任务悬浮胶囊", error)
-            capsule.close()
-        }
-    }
-
-    private suspend fun <T> withOverlayHidden(action: suspend () -> T): T = overlay?.withoutOverlay(action) ?: action()
-
     private fun progress(
         message: Int,
         target: String = "",
@@ -423,7 +391,6 @@ class PhoneTaskService : Service() {
 
     private fun show(state: PhoneTaskStatus) {
         update(state)
-        overlay?.render(state.progress, activityVisible.value)
         getSystemService(NotificationManager::class.java).notify(NOTIFICATION, notification(state))
     }
 
@@ -472,8 +439,6 @@ class PhoneTaskService : Service() {
     override fun onDestroy() {
         if (status.value.running) update(PhoneTaskStatus(R.string.phone_task_stopped))
         scope.cancel()
-        overlay?.close()
-        overlay = null
         super.onDestroy()
     }
 
@@ -523,15 +488,10 @@ class PhoneTaskService : Service() {
         private val bluetoothGoal = Regex("蓝牙|藍牙|bluetooth", RegexOption.IGNORE_CASE)
         private val mutableStatus = MutableStateFlow(PhoneTaskStatus(R.string.phone_task_idle))
         internal val status = mutableStatus.asStateFlow()
-        private val activityVisible = MutableStateFlow(false)
         private var pendingTap: CompletableDeferred<Boolean>? = null
 
         internal fun answerTap(allow: Boolean) {
             pendingTap?.complete(allow)
-        }
-
-        internal fun setActivityVisible(visible: Boolean) {
-            activityVisible.value = visible
         }
 
         internal fun dismissDraft() {

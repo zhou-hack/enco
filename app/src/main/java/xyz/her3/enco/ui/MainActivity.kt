@@ -33,6 +33,7 @@ import xyz.her3.enco.core.agent.PhoneTaskPermission
 import xyz.her3.enco.core.agent.PhoneTaskRequest
 import xyz.her3.enco.core.agent.PhoneTaskRouter
 import xyz.her3.enco.core.agent.WeChatDraft
+import xyz.her3.enco.device.overlay.PhoneTaskOverlayService
 import xyz.her3.enco.device.service.PhoneTaskReview
 import xyz.her3.enco.device.service.PhoneTaskService
 import xyz.her3.enco.device.shizuku.ShizukuConnection
@@ -301,21 +302,12 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         activityResumed = true
         overlayAllowed = Settings.canDrawOverlays(this)
+        PhoneTaskOverlayService.startIfAllowed(this)
     }
 
     override fun onPause() {
         activityResumed = false
         super.onPause()
-    }
-
-    override fun onStart() {
-        super.onStart()
-        PhoneTaskService.setActivityVisible(true)
-    }
-
-    override fun onStop() {
-        PhoneTaskService.setActivityVisible(false)
-        super.onStop()
     }
 
     private fun openOverlaySettings() {

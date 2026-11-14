@@ -46,9 +46,14 @@
     <string name="phone_task_wechat_unavailable">无法打开微信的发送界面，请检查微信是否已安装。</string>
     <string name="phone_task_app_settings">设置</string>
     <string name="phone_task_app_wechat">微信</string>
-    <string name="phone_task_overlay_enable">开启顶部任务状态</string>
+    <string name="phone_task_overlay_enable">开启常驻悬浮球</string>
+    <string name="phone_task_overlay_title">enco 悬浮球</string>
+    <string name="phone_task_overlay_notification">enco 悬浮球运行中</string>
+    <string name="phone_task_overlay_menu">展开悬浮球菜单</string>
+    <string name="phone_task_overlay_collapse">收起悬浮球菜单</string>
+    <string name="phone_task_overlay_open">打开 enco</string>
     <string name="phone_task_overlay_open_failed">请手动返回 enco 查看任务。</string>
-    <string name="phone_task_overlay_review">返回 enco 确认点按</string>
+    <string name="phone_task_overlay_review">确认点按</string>
     <string name="phone_task_progress_line">%1$s · %2$s</string>
     <string name="phone_task_phase_open_settings">正在打开设置</string>
     <string name="phone_task_phase_open_wechat">正在打开微信</string>
@@ -116,7 +121,7 @@
     <string name="screen_control_overlay">悬浮窗权限</string>
     <string name="screen_control_overlay_ready">已允许 enco 显示在其他应用上层。</string>
     <string name="screen_control_overlay_grant">去授权</string>
-    <string name="screen_control_permission">允许后可在其他应用上使用操控面板。</string>
+    <string name="screen_control_permission">允许后可在其他应用上显示悬浮球和操控面板。</string>
     <string name="screen_control_open_failed">无法打开操控面板，请检查悬浮窗权限。</string>
     <string name="screen_control_capture">截图</string>
     <string name="screen_control_back">返回</string>

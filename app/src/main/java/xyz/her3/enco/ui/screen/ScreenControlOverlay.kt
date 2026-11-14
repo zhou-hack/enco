@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.PixelFormat
 import android.util.Log
 import android.view.Gravity
+import android.view.WindowInsets
 import android.view.WindowManager
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -18,6 +19,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import xyz.her3.enco.R
 import xyz.her3.enco.device.overlay.OverlayContentOwner
+import xyz.her3.enco.device.overlay.PhoneTaskOverlayService
 import xyz.her3.enco.device.shell.IEncoShellService
 import xyz.her3.enco.device.shell.ScreenFrame
 import xyz.her3.enco.device.shizuku.ShizukuConnection
@@ -42,7 +44,11 @@ internal class ScreenControlOverlay(
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
                 PixelFormat.TRANSLUCENT,
-            ).apply { gravity = Gravity.TOP or Gravity.END }
+            ).apply {
+                gravity = Gravity.TOP or Gravity.END
+                y = (64 * context.resources.displayMetrics.density).toInt()
+                setFitInsetsTypes(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
+            }
     private val view = ComposeView(context)
 
     fun attach() {
@@ -77,15 +83,17 @@ internal class ScreenControlOverlay(
             try {
                 setHidden(true)
                 delay(150)
-                if (input != null) {
-                    val applied = ShizukuConnection.withScreenService(input)
-                    if (!applied) {
-                        errorMessage = R.string.screen_control_input_failed
-                        return@launch
+                PhoneTaskOverlayService.withoutOverlay {
+                    if (input != null) {
+                        val applied = ShizukuConnection.withScreenService(input)
+                        if (!applied) {
+                            errorMessage = R.string.screen_control_input_failed
+                            return@withoutOverlay
+                        }
+                        delay(750)
                     }
-                    delay(750)
+                    frame = ShizukuConnection.withScreenService { it.captureScreen() }
                 }
-                frame = ShizukuConnection.withScreenService { it.captureScreen() }
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
