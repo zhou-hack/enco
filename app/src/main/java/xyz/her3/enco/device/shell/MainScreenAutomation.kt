@@ -95,6 +95,7 @@ internal class MainScreenAutomation {
             ScreenFrame().apply {
                 id = ++frameId
                 image = preview
+                packageName = current.windowPackage
             }
         }
 

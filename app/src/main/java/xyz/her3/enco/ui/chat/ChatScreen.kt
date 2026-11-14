@@ -42,6 +42,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import xyz.her3.enco.R
+import xyz.her3.enco.device.service.PhoneTaskStatus
 import xyz.her3.enco.ui.ControlIcon
 import xyz.her3.enco.ui.ControlSymbol
 import xyz.her3.enco.ui.theme.EncoText
@@ -55,6 +56,9 @@ internal fun ChatScreen(
     onStop: () -> Unit,
     onModelSettings: () -> Unit,
     onPhoneControl: () -> Unit,
+    task: PhoneTaskStatus,
+    onRunPhoneTask: () -> Unit,
+    onStopPhoneTask: () -> Unit,
 ) {
     val colors = LocalEncoColors.current
     val list = rememberLazyListState()
@@ -139,6 +143,11 @@ internal fun ChatScreen(
                 }
             }
         }
+        if (task.message != R.string.phone_task_idle) {
+            val label = if (task.step > 0) stringResource(task.message, task.step) else stringResource(task.message)
+            EncoText(label, Modifier.padding(bottom = 4.dp), size = 13.sp, color = colors.muted)
+            if (task.detail.isNotBlank()) EncoText(task.detail, Modifier.padding(bottom = 8.dp), size = 13.sp)
+        }
         state.chatNotice?.let { notice ->
             EncoText(stringResource(notice), Modifier.padding(bottom = 8.dp), size = 13.sp, color = colors.error)
         }
@@ -169,6 +178,11 @@ internal fun ChatScreen(
                     }
                 },
             )
+            if (task.running) {
+                ChatIconButton(ControlSymbol.STOP, R.string.phone_task_stop, primary = true, onClick = onStopPhoneTask)
+            } else if (!state.generating && state.draft.isNotBlank()) {
+                ChatIconButton(ControlSymbol.PHONE, R.string.phone_task_start, onClick = onRunPhoneTask)
+            }
             if (state.generating) {
                 ChatIconButton(ControlSymbol.STOP, R.string.chat_stop, primary = true, onClick = onStop)
             } else {

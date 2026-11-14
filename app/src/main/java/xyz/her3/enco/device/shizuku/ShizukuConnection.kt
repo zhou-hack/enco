@@ -37,7 +37,7 @@ internal object ShizukuConnection {
     private const val LOG_TAG = "enco.shizuku"
     private const val PERMISSION_REQUEST = 1
     private const val MIN_SERVER_VERSION = 13
-    private const val USER_SERVICE_VERSION = 4
+    private const val USER_SERVICE_VERSION = 5
     private const val CONNECT_TIMEOUT_MS = 10_000L
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val args =

@@ -41,7 +41,7 @@ class PhoneOperator(
         var previous: Observation? = null
         var unchanged = 0
         var feedback = ""
-        repeat(12) { step ->
+        repeat(40) { step ->
             currentCoroutineContext().ensureActive()
             val screen = device.observe() ?: return TaskResult.ScreenUnavailable
             if (screen.requiresTakeover) return TaskResult.TakeOver

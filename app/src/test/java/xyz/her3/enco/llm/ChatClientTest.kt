@@ -2,6 +2,7 @@ package xyz.her3.enco.llm
 
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import mockwebserver3.MockResponse
@@ -28,6 +29,42 @@ class ChatClientTest {
             val json = encoJson.parseToJsonElement(request.body!!.utf8()).jsonObject
             assertEquals("true", json.getValue("stream").jsonPrimitive.content)
             assertEquals("demo", json.getValue("model").jsonPrimitive.content)
+        }
+    }
+
+    @Test
+    fun sendsAnImageAlongsideTheVisionPrompt() {
+        MockWebServer().use { server ->
+            server.start()
+            server.enqueue(sse(chunk("OK")))
+            val config = ModelConfig(server.url("/v1/chat/completions"), "demo", "")
+            val image = "data:image/jpeg;base64,dGVzdA=="
+            val reply = runBlocking { ChatClient().streamImage(config, "system", "look", image).toList() }
+            assertEquals(listOf("OK"), reply)
+            val request = encoJson.parseToJsonElement(server.takeRequest().body!!.utf8()).jsonObject
+            val parts =
+                request
+                    .getValue("messages")
+                    .jsonArray[1]
+                    .jsonObject
+                    .getValue("content")
+                    .jsonArray
+            assertEquals(
+                "look",
+                parts[0]
+                    .jsonObject
+                    .getValue("text")
+                    .jsonPrimitive.content,
+            )
+            assertEquals(
+                image,
+                parts[1]
+                    .jsonObject
+                    .getValue("image_url")
+                    .jsonObject
+                    .getValue("url")
+                    .jsonPrimitive.content,
+            )
         }
     }
 

@@ -5,4 +5,5 @@ import android.graphics.Bitmap;
 parcelable ScreenFrame {
     long id;
     Bitmap image;
+    @nullable String packageName;
 }

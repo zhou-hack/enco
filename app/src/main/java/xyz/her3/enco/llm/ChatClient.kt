@@ -9,6 +9,11 @@ import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
@@ -84,6 +89,47 @@ internal class ChatClient(
     fun stream(
         config: ModelConfig,
         messages: List<ChatMessage>,
+    ): Flow<String> =
+        streamRequest(
+            config,
+            messages.map {
+                RequestMessage(it.role, JsonPrimitive(it.content))
+            },
+        )
+
+    fun streamImage(
+        config: ModelConfig,
+        system: String,
+        prompt: String,
+        imageUrl: String,
+    ): Flow<String> =
+        streamRequest(
+            config,
+            listOf(
+                RequestMessage("system", JsonPrimitive(system)),
+                RequestMessage(
+                    "user",
+                    buildJsonArray {
+                        add(
+                            buildJsonObject {
+                                put("type", "text")
+                                put("text", prompt)
+                            },
+                        )
+                        add(
+                            buildJsonObject {
+                                put("type", "image_url")
+                                put("image_url", buildJsonObject { put("url", imageUrl) })
+                            },
+                        )
+                    },
+                ),
+            ),
+        )
+
+    private fun streamRequest(
+        config: ModelConfig,
+        messages: List<RequestMessage>,
     ): Flow<String> {
         val payload = encoJson.encodeToString(ChatRequest(config.model, messages, stream = true))
         val request =
@@ -185,8 +231,14 @@ internal class ChatClient(
     @Serializable
     private data class ChatRequest(
         val model: String,
-        val messages: List<ChatMessage>,
+        val messages: List<RequestMessage>,
         val stream: Boolean,
+    )
+
+    @Serializable
+    private data class RequestMessage(
+        val role: String,
+        val content: JsonElement,
     )
 
     @Serializable
