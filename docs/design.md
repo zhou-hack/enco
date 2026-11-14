@@ -425,7 +425,7 @@ enco App 进程                                shell 助手进程（uid 2000，�
 ## 13. 原创性与第三方声明
 
 - 本项目代码全部由团队原创编写，没有复制以下项目的代码，只参考了它们的产品与架构思路：
-  - [Mika](https://github.com/wangzan101/Mika)（Apache-2.0）：后台虚拟屏、技能沉淀、询问/自主模式
+  - [Mika](https://github.com/wangzan101/Mika)（Apache-2.0）：后台虚拟屏、技能沉淀、询问/自主模式；任务悬浮胶囊仅参考边侧停靠、球/胶囊转换和状态反馈思路，代码、图标和文案均为 enco 原创
   - [DSH Go](https://github.com/ccch1mneyyy/dsh-go)（AGPL-3.0）：运行中插话与打断、桌宠式状态反馈
   - [humanize-agent](https://github.com/zhou-hack/humanize-agent)：三级记忆、权限审批、校园活动场景
 - 学术参考：Mobile-Agent-v2（规划 / 决策 / 反思多 Agent 协作）、AppAgent（基于探索的 App 操作经验）、Set-of-Mark Prompting（标注截图提升视觉定位）。

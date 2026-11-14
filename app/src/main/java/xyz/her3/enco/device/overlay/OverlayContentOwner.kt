@@ -1,5 +1,6 @@
 package xyz.her3.enco.device.overlay
 
+import android.view.View
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.lifecycle.Lifecycle
@@ -23,13 +24,13 @@ internal class OverlayContentOwner :
     override val savedStateRegistry get() = savedState.savedStateRegistry
     override val viewModelStore = ViewModelStore()
 
-    fun attach(view: ComposeView) {
+    fun attach(view: View) {
         savedState.performRestore(null)
         registry.currentState = Lifecycle.State.RESUMED
         view.setViewTreeLifecycleOwner(this)
         view.setViewTreeSavedStateRegistryOwner(this)
         view.setViewTreeViewModelStoreOwner(this)
-        view.setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+        (view as? ComposeView)?.setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
     }
 
     fun close() {

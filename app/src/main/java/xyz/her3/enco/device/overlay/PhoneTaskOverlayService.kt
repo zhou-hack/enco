@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.os.IBinder
 import android.provider.Settings
 import android.util.Log
@@ -66,6 +67,11 @@ class PhoneTaskOverlayService : Service() {
         overlay?.close()
         overlay = null
         super.onDestroy()
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        overlay?.onConfigurationChanged()
     }
 
     private fun openEnco() {

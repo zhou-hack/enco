@@ -26,6 +26,7 @@ internal data class EncoColors(
     val accentTint: Color,
     val positive: Color,
     val positiveTint: Color,
+    val warning: Color,
     val error: Color,
 )
 
@@ -43,6 +44,7 @@ private val Light =
         accentTint = Color(0xFFE1E8FC),
         positive = Color(0xFF29644F),
         positiveTint = Color(0xFFE0F1E9),
+        warning = Color(0xFF8A5A16),
         error = Color(0xFFA23542),
     )
 
@@ -60,6 +62,7 @@ private val Dark =
         accentTint = Color(0xFF313F64),
         positive = Color(0xFFA7DCC7),
         positiveTint = Color(0xFF253E38),
+        warning = Color(0xFFFFD08A),
         error = Color(0xFFFFACB3),
     )
 
