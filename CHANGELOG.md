@@ -4,6 +4,7 @@
 
 ### 2026-11-14
 
+- `refactor(ui): 将主屏操控面板精简为截图按钮`
 - `feat(device): 拆分任务状态条与日程快捷悬浮球`
 - `feat(device): 重设计任务悬浮球并支持贴边拖动`
 - `fix(device): 通过 Shizuku 直接打开任务应用`

@@ -32,7 +32,7 @@
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="User-initiated screen preview and touch controls shown over the current app" />
+                android:value="User-initiated screenshot button shown over the current app" />
         </service>
         <service
             android:name=".device.service.PhoneTaskService"

@@ -29,11 +29,11 @@ class ScreenControlService : Service() {
 
         try {
             startForeground(NOTIFICATION_ID, createNotification())
-            val panel = ScreenControlOverlay(this) { stopSelf() }
+            val panel = ScreenControlOverlay(this)
             overlay = panel
             panel.attach()
         } catch (error: RuntimeException) {
-            Log.w("enco.device", "无法启动主屏操控面板", error)
+            Log.w("enco.device", "无法启动主屏截图按钮", error)
             Toast.makeText(this, R.string.screen_control_open_failed, Toast.LENGTH_LONG).show()
             stopSelf()
         }

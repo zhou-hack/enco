@@ -6,6 +6,7 @@ import android.util.Log
 import android.view.Gravity
 import android.view.WindowInsets
 import android.view.WindowManager
+import android.widget.Toast
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -20,22 +21,17 @@ import kotlinx.coroutines.launch
 import xyz.her3.enco.R
 import xyz.her3.enco.device.overlay.OverlayContentOwner
 import xyz.her3.enco.device.overlay.PhoneTaskOverlayService
-import xyz.her3.enco.device.shell.IEncoShellService
-import xyz.her3.enco.device.shell.ScreenFrame
 import xyz.her3.enco.device.shizuku.ShizukuConnection
 import xyz.her3.enco.ui.theme.EncoTheme
 
 internal class ScreenControlOverlay(
-    context: Context,
-    private val onClose: () -> Unit,
+    private val context: Context,
 ) {
     private val windowManager = context.getSystemService(WindowManager::class.java)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val contentOwner = OverlayContentOwner()
 
-    private var frame by mutableStateOf<ScreenFrame?>(null)
     private var busy by mutableStateOf(false)
-    private var errorMessage by mutableStateOf<Int?>(null)
     private val params =
         WindowManager
             .LayoutParams(
@@ -56,49 +52,33 @@ internal class ScreenControlOverlay(
         view.setContent {
             EncoTheme {
                 ScreenControlPanel(
-                    frame = frame,
                     busy = busy,
-                    errorMessage = errorMessage,
-                    onCapture = { runOperation() },
-                    onBack = { runOperation(IEncoShellService::pressBack) },
-                    onHome = { runOperation(IEncoShellService::pressHome) },
-                    onTouch = { id, fromX, fromY, toX, toY, swipe ->
-                        runOperation { service ->
-                            if (swipe) service.swipe(id, fromX, fromY, toX, toY) else service.tap(id, fromX, fromY)
-                        }
-                    },
-                    onClose = onClose,
+                    onCapture = ::captureScreen,
+                    resultOptions = emptyList(),
+                    onResultOptionSelected = {},
                 )
             }
         }
         windowManager.addView(view, params)
     }
 
-    private fun runOperation(input: ((IEncoShellService) -> Boolean)? = null) {
+    private fun captureScreen() {
         if (busy) return
         busy = true
-        frame = null
-        errorMessage = null
         scope.launch {
             try {
                 setHidden(true)
                 delay(150)
                 PhoneTaskOverlayService.withoutOverlay {
-                    if (input != null) {
-                        val applied = ShizukuConnection.withScreenService(input)
-                        if (!applied) {
-                            errorMessage = R.string.screen_control_input_failed
-                            return@withoutOverlay
-                        }
-                        delay(750)
-                    }
-                    frame = ShizukuConnection.withScreenService { it.captureScreen() }
+                    val frame = ShizukuConnection.withScreenService { it.captureScreen() }
+                    check(frame.image != null) { "截图未返回图像" }
                 }
+                Toast.makeText(context, R.string.screen_control_capture_ai_pending, Toast.LENGTH_SHORT).show()
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
-                Log.w("enco.device", "主屏操控失败", error)
-                errorMessage = R.string.screen_control_failed
+                Log.w("enco.device", "主屏截图失败", error)
+                Toast.makeText(context, R.string.screen_control_failed, Toast.LENGTH_LONG).show()
             } finally {
                 if (view.isAttachedToWindow) setHidden(false)
                 busy = false
