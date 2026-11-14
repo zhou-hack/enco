@@ -160,3 +160,11 @@
 - 降级：悬浮窗和通知的系统设置入口始终保留，自动授权不完整时显示中文提示。未加入通知监听、无障碍、录音或电池白名单等后续权限。
 - 验证：在 `f788d315` 先撤销两项权限，页面正确显示待设置和手动入口；点击“一键授权”后，系统返回 `SYSTEM_ALERT_WINDOW: allow`、`POST_NOTIFICATIONS: granted=true`，页面变为可开始，快捷球服务恢复运行。Spotless、53 项 JVM 测试和 Debug 构建通过。
 - AI 工具：Trae（Kimi-K3.1-Pro）实现固定授权命令与权限界面，并通过 ADB 撤销、点击和复查真机状态。
+
+### 主屏 shell 通用能力
+
+- 完成：AIDL 追加事务 12–16 与 `ShellNode`/`ShellFrame`。助手进程可读取主屏控件树（先序路径、物理坐标、深度 40/节点 600/文本 120 上限）、长按、受限按键（BACK/HOME/ENTER）、按包名启动 App，以及通用 `ACTION_SET_TEXT`。
+- 安全：节点快照与截图共用窗口/帧一致性校验；动作按帧号与目标防旧帧；文本输入校验可见、启用、可编辑、非密码并回读精确核对，密码正文不回传。包名启动用固定 `ProcessBuilder` 参数，不拼 shell。
+- 兼容：保留 `pasteWeChatText`、`ShellClipboard`、设置专用 `SettingsDevice` 与 Gmail 读取，UserService 版本升至 14。
+- 验证：Spotless、53 项 JVM 测试和 Debug 构建通过。真机动作验收随 `MainScreenDevice` 一起进行。
+- AI 工具：Trae（Kimi-K3.1-Pro）实现 shell 采集与注入，人工补充 AIDL 文本边界校验。

@@ -3,6 +3,8 @@ package xyz.her3.enco.device.shell
 import android.app.UiAutomation
 import android.graphics.Bitmap
 import android.graphics.Point
+import android.graphics.Rect
+import android.os.Bundle
 import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
@@ -80,26 +82,126 @@ internal class MainScreenAutomation {
 
     fun capture(): ScreenFrame =
         useAutomation { automation ->
-            target = null
-            val current = awaitTarget(automation)
-            val bitmap = checkNotNull(automation.takeScreenshot()) { "主屏截图失败" }
+            val snapshot = captureSnapshot(automation, includeNodes = false)
+            ScreenFrame().apply {
+                id = ++frameId
+                image = snapshot.image
+                packageName = snapshot.target.windowPackage
+            }
+        }
+
+    fun observe(): ShellFrame =
+        useAutomation { automation ->
+            val snapshot = captureSnapshot(automation, includeNodes = true)
+            ShellFrame().apply {
+                id = ++frameId
+                image = snapshot.image
+                packageName = snapshot.target.windowPackage
+                width = snapshot.target.size.x
+                height = snapshot.target.size.y
+                rotation = snapshot.target.rotation
+                nodes = snapshot.nodes
+            }
+        }
+
+    private data class Snapshot(
+        val target: Target,
+        val image: Bitmap,
+        val nodes: Array<ShellNode>,
+    )
+
+    private fun captureSnapshot(
+        automation: UiAutomation,
+        includeNodes: Boolean,
+    ): Snapshot {
+        target = null
+        val current = awaitTarget(automation)
+        val nodes = if (includeNodes) readActiveWindow(automation, current) else emptyArray()
+        val bitmap = checkNotNull(automation.takeScreenshot()) { "主屏截图失败" }
+        try {
             val after = awaitTarget(automation)
             val screenshotRatio = bitmap.width.toFloat() / bitmap.height
             val displayRatio = current.size.x.toFloat() / current.size.y
             check(current == after && abs(screenshotRatio - displayRatio) < 0.01f) {
-                val width = bitmap.width
-                val height = bitmap.height
-                bitmap.recycle()
-                "截图与主屏状态不一致：$width×$height，$current → $after"
+                "截图与主屏状态不一致：${bitmap.width}×${bitmap.height}，$current → $after"
             }
-            val preview = scalePreview(bitmap)
-            target = current
-            ScreenFrame().apply {
-                id = ++frameId
-                image = preview
-                packageName = current.windowPackage
+        } catch (error: Exception) {
+            bitmap.recycle()
+            throw error
+        }
+        val preview = scalePreview(bitmap)
+        target = current
+        return Snapshot(current, preview, nodes)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun readActiveWindow(
+        automation: UiAutomation,
+        expected: Target,
+    ): Array<ShellNode> {
+        val root = checkNotNull(awaitRoot(automation)) { "无法读取主屏活动窗口" }
+        try {
+            check(root.packageName?.toString() == expected.windowPackage && root.className?.toString() == expected.windowClass) {
+                "主屏活动窗口与快照状态不一致"
+            }
+            val nodes = mutableListOf<ShellNode>()
+            appendNode(root, emptyList(), nodes)
+            return nodes.toTypedArray()
+        } finally {
+            root.recycle()
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun appendNode(
+        node: AccessibilityNodeInfo,
+        path: List<Int>,
+        nodes: MutableList<ShellNode>,
+    ) {
+        if (path.size > MAX_DEPTH || nodes.size >= MAX_NODES) return
+        val bounds = Rect()
+        node.getBoundsInScreen(bounds)
+        val actions = node.actionList
+        nodes.add(
+            ShellNode().apply {
+                nodePath = path.toIntArray()
+                left = bounds.left
+                top = bounds.top
+                right = bounds.right
+                bottom = bounds.bottom
+                packageName = node.packageName?.toString()
+                className = node.className?.toString()
+                text = if (node.isPassword) null else node.text?.toString()?.take(MAX_TEXT_LENGTH)
+                contentDescription = node.contentDescription?.toString()?.take(MAX_TEXT_LENGTH)
+                hintText = node.hintText?.toString()?.take(MAX_TEXT_LENGTH)
+                visible = node.isVisibleToUser
+                enabled = node.isEnabled
+                canTap = node.isClickable
+                canLongPress = node.isLongClickable
+                password = node.isPassword
+                canEdit = node.isEditable
+                canScrollForward =
+                    node.isScrollable && actions.contains(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_FORWARD)
+                canScrollBackward =
+                    node.isScrollable && actions.contains(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_BACKWARD)
+            },
+        )
+        repeat(node.childCount) { index ->
+            if (nodes.size >= MAX_NODES) return
+            val child = node.getChild(index) ?: return@repeat
+            try {
+                appendNode(child, path + index, nodes)
+            } finally {
+                child.recycle()
             }
         }
+    }
+
+    fun longPress(
+        id: Long,
+        x: Int,
+        y: Int,
+    ): Boolean = touch(id, x, y, x, y, swipe = false, holdMs = LONG_PRESS_MS)
 
     fun touch(
         id: Long,
@@ -108,6 +210,7 @@ internal class MainScreenAutomation {
         toX: Int,
         toY: Int,
         swipe: Boolean,
+        holdMs: Long = 0,
     ): Boolean {
         require(listOf(fromX, fromY, toX, toY).all { it in 0..1000 })
         val expected = target
@@ -126,6 +229,7 @@ internal class MainScreenAutomation {
             val endY = toScreen(toY, expected.size.y)
             val downTime = SystemClock.uptimeMillis()
             if (!sendTouch(automation, downTime, MotionEvent.ACTION_DOWN, startX, startY)) return@useAutomation false
+            if (holdMs > 0) SystemClock.sleep(holdMs)
 
             var completed = false
             var currentX = startX
@@ -150,8 +254,9 @@ internal class MainScreenAutomation {
         }
     }
 
-    fun pressKey(key: Int): Boolean =
-        useAutomation { automation ->
+    fun pressKey(key: Int): Boolean {
+        if (key !in ALLOWED_KEYS) return false
+        return useAutomation { automation ->
             target = null
             val time = SystemClock.uptimeMillis()
             val down = KeyEvent(time, time, KeyEvent.ACTION_DOWN, key, 0)
@@ -159,6 +264,7 @@ internal class MainScreenAutomation {
             val pressed = automation.injectInputEvent(down, true)
             automation.injectInputEvent(up, true) && pressed
         }
+    }
 
     @Suppress("DEPRECATION")
     fun pasteWeChatText(
@@ -185,6 +291,52 @@ internal class MainScreenAutomation {
                 pasteFromClipboard(automation, text, editable) { awaitTarget(automation) == expected }
             } finally {
                 field?.recycle()
+            }
+        }
+    }
+
+    fun launchPackage(packageName: String): Boolean {
+        target = null
+        return ShellAppLauncher.launchPackage(packageName)
+    }
+
+    @Suppress("DEPRECATION")
+    fun setText(
+        id: Long,
+        path: IntArray,
+        text: String,
+    ): Boolean {
+        if (text.length !in 1..500 || text.any { it.isISOControl() && it != '\n' }) return false
+        val expected = target
+        target = null
+        if (id != frameId || expected?.windowPackage == null || path.size > MAX_DEPTH) return false
+        return useAutomation { automation ->
+            if (awaitTarget(automation) != expected) return@useAutomation false
+            val root = awaitRoot(automation) ?: return@useAutomation false
+            var node = root
+            try {
+                if (root.packageName?.toString() != expected.windowPackage || root.className?.toString() != expected.windowClass) {
+                    return@useAutomation false
+                }
+                for (index in path) {
+                    if (index !in 0 until node.childCount) return@useAutomation false
+                    val child = node.getChild(index) ?: return@useAutomation false
+                    if (node !== root) node.recycle()
+                    node = child
+                }
+                if (!node.isVisibleToUser || !node.isEnabled || !node.isEditable || node.isPassword) {
+                    return@useAutomation false
+                }
+                val arguments =
+                    Bundle().apply {
+                        putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+                    }
+                if (!node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)) return@useAutomation false
+                if (!node.refresh()) return@useAutomation false
+                node.text?.toString() == text
+            } finally {
+                if (node !== root) node.recycle()
+                root.recycle()
             }
         }
     }
@@ -279,7 +431,12 @@ internal class MainScreenAutomation {
 
     private companion object {
         const val PREVIEW_MAX_SIDE = 1280
+        const val MAX_DEPTH = 40
+        const val MAX_NODES = 600
+        const val MAX_TEXT_LENGTH = 120
+        const val LONG_PRESS_MS = 600L
         const val SWIPE_STEPS = 12
         const val SWIPE_STEP_MS = 20L
+        val ALLOWED_KEYS = setOf(KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_HOME, KeyEvent.KEYCODE_ENTER)
     }
 }

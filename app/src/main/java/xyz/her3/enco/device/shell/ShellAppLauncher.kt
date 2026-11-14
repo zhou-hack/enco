@@ -5,6 +5,21 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 internal object ShellAppLauncher {
+    fun launchPackage(packageName: String): Boolean {
+        if (!PACKAGE_NAME.matches(packageName)) return false
+        return start(
+            listOf(
+                "-a",
+                "android.intent.action.MAIN",
+                "-c",
+                "android.intent.category.LAUNCHER",
+                "-p",
+                packageName,
+            ),
+            packageName,
+        )
+    }
+
     fun launch(app: Int): Boolean {
         val target =
             when (app) {
@@ -24,6 +39,13 @@ internal object ShellAppLauncher {
                     return false
                 }
             }
+        return start(target, "目标编号=$app")
+    }
+
+    private fun start(
+        target: List<String>,
+        description: String,
+    ): Boolean {
         val process =
             try {
                 ProcessBuilder(listOf("/system/bin/am", "start", "-W", "--user", "current") + target)
@@ -35,16 +57,18 @@ internal object ShellAppLauncher {
             }
         return try {
             if (!process.waitFor(10, TimeUnit.SECONDS)) {
-                Log.w("enco.device", "启动目标应用超时，目标编号=$app")
+                Log.w("enco.device", "启动目标应用超时，$description")
                 return false
             }
             // 部分系统在 Intent 解析失败时仍返回退出码 0。
             val output = process.inputStream.bufferedReader().use { it.readText() }
             val started = process.exitValue() == 0 && output.lineSequence().any { it.trim() == "Status: ok" }
-            if (!started) Log.w("enco.device", "目标应用启动失败，目标编号=$app")
+            if (!started) Log.w("enco.device", "目标应用启动失败，$description")
             started
         } finally {
             if (process.isAlive) process.destroyForcibly()
         }
     }
+
+    private val PACKAGE_NAME = Regex("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+")
 }

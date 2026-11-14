@@ -2,6 +2,7 @@ package xyz.her3.enco.device.shell;
 
 import xyz.her3.enco.device.shell.ScreenFrame;
 import xyz.her3.enco.device.shell.SettingsFrame;
+import xyz.her3.enco.device.shell.ShellFrame;
 
 interface IEncoShellService {
     const int APP_SETTINGS = 1;
@@ -20,5 +21,10 @@ interface IEncoShellService {
     @nullable String[] readGmailInbox(int count) = 9;
     boolean launchApp(int app) = 10;
     int grantSelfPermissions() = 11;
+    ShellFrame observeMainScreen() = 12;
+    boolean longPress(long frameId, int x, int y) = 13;
+    boolean pressKey(int keyCode) = 14;
+    boolean launchPackage(String packageName) = 15;
+    boolean setText(long frameId, in int[] path, String text) = 16;
     void destroy() = 16777114;
 }

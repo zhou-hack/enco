@@ -56,6 +56,24 @@ class EncoShellService : IEncoShellService.Stub() {
 
     override fun grantSelfPermissions(): Int = runAsService { ShellPermissionGranter.grant() }
 
+    override fun observeMainScreen(): ShellFrame = runAsService { screen.observe() }
+
+    override fun longPress(
+        frameId: Long,
+        x: Int,
+        y: Int,
+    ): Boolean = runAsService { screen.longPress(frameId, x, y) }
+
+    override fun pressKey(keyCode: Int): Boolean = runAsService { screen.pressKey(keyCode) }
+
+    override fun launchPackage(packageName: String): Boolean = runAsService { screen.launchPackage(packageName) }
+
+    override fun setText(
+        frameId: Long,
+        path: IntArray,
+        text: String,
+    ): Boolean = runAsService { screen.setText(frameId, path, text) }
+
     @Synchronized
     private fun <T> runAsService(action: () -> T): T {
         val identity = Binder.clearCallingIdentity()
