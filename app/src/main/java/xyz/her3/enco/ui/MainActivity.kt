@@ -1,5 +1,6 @@
 package xyz.her3.enco.ui
 
+import android.app.NotificationManager
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
@@ -22,6 +23,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 import xyz.her3.enco.R
 import xyz.her3.enco.core.agent.PhoneTaskKind
 import xyz.her3.enco.core.agent.PhoneTaskPermission
@@ -42,6 +46,8 @@ import xyz.her3.enco.ui.theme.EncoTheme
 
 class MainActivity : ComponentActivity() {
     private var overlayAllowed by mutableStateOf(false)
+    private var notificationsAllowed by mutableStateOf(false)
+    private var permissionsGranting by mutableStateOf(false)
     private var activityResumed by mutableStateOf(false)
     private val chat by viewModels<ChatViewModel>()
 
@@ -113,8 +119,12 @@ class MainActivity : ComponentActivity() {
                         EncoHome(
                             status = status,
                             overlayAllowed = overlayAllowed,
+                            notificationsAllowed = notificationsAllowed,
+                            permissionsGranting = permissionsGranting,
                             onOpenChat = back,
+                            onGrantPermissions = ::grantPermissions,
                             onOverlaySettings = ::openOverlaySettings,
+                            onNotificationSettings = ::openNotificationSettings,
                             onOpenShizuku = ::openShizuku,
                             onRetry = { ShizukuConnection.refresh(requestPermission = true) },
                             onOpenScreenControl = ::openScreenControl,
@@ -243,13 +253,53 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         activityResumed = true
-        overlayAllowed = Settings.canDrawOverlays(this)
+        refreshPermissionState()
         PhoneTaskOverlayService.startIfAllowed(this)
     }
 
     override fun onPause() {
         activityResumed = false
         super.onPause()
+    }
+
+    private fun refreshPermissionState() {
+        overlayAllowed = Settings.canDrawOverlays(this)
+        notificationsAllowed = getSystemService(NotificationManager::class.java).areNotificationsEnabled()
+    }
+
+    private fun grantPermissions() {
+        if (permissionsGranting || ShizukuConnection.status.value != ShizukuStatus.CONNECTED) return
+        permissionsGranting = true
+        lifecycleScope.launch {
+            var failed = false
+            try {
+                ShizukuConnection.withScreenService { it.grantSelfPermissions() }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                failed = true
+                Log.w("enco.shizuku", "一键授权调用失败", error)
+            } finally {
+                refreshPermissionState()
+                permissionsGranting = false
+            }
+            PhoneTaskOverlayService.startIfAllowed(this@MainActivity)
+            if (failed || !overlayAllowed || !notificationsAllowed) {
+                Toast.makeText(this@MainActivity, R.string.screen_control_grant_incomplete, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun openNotificationSettings() {
+        val intent =
+            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+        try {
+            startActivity(intent)
+        } catch (error: ActivityNotFoundException) {
+            Log.w("enco.device", "无法打开通知权限设置", error)
+            Toast.makeText(this, R.string.screen_control_notification_settings_failed, Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun openOverlaySettings() {

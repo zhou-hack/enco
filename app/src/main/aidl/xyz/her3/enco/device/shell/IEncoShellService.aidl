@@ -19,5 +19,6 @@ interface IEncoShellService {
     boolean pasteWeChatText(long frameId, String text) = 8;
     @nullable String[] readGmailInbox(int count) = 9;
     boolean launchApp(int app) = 10;
+    int grantSelfPermissions() = 11;
     void destroy() = 16777114;
 }

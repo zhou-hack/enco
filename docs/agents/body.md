@@ -33,7 +33,7 @@ Agent、模型、记忆、校园逻辑见 [brain.md](brain.md)。
 - `uiautomator dump`、`screencap`、`input` 这些命令只作为兜底，不要作为主要路径（每次要 0.5–2 秒）。
 - **隐藏 API 只能在 `device/shell/` 里使用**，App 进程不调用。
 - AIDL 接口只开放固定能力（读界面、截图、注入输入、启动 App、管理舞台、给 enco 自己授权），**不要加执行任意命令的方法**。
-- 有了 shell 权限后自动授予：悬浮窗（`appops`）、通知读取（`cmd notification allow_listener`）、运行时权限（`pm grant`）、电池优化白名单（`dumpsys deviceidle whitelist`），并自动开启 enco 的无障碍服务（在 `enabled_accessibility_services` 原有列表后追加，不动别的服务）。
+- 有了 shell 权限后自动授予：悬浮窗（`appops`）、通知读取（`cmd notification allow_listener`）、运行时权限（`pm grant`）、电池优化白名单（`dumpsys deviceidle whitelist`），并自动开启 enco 的无障碍服务（在 `enabled_accessibility_services` 原有列表后追加，不动别的服务）。授权只能由用户点击触发，命令使用固定参数列表；App 必须复查系统实际状态并保留手动设置降级。
 
 ### 2.2 无障碍备用后端
 

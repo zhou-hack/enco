@@ -54,6 +54,8 @@ class EncoShellService : IEncoShellService.Stub() {
 
     override fun launchApp(app: Int): Boolean = runAsService { ShellAppLauncher.launch(app) }
 
+    override fun grantSelfPermissions(): Int = runAsService { ShellPermissionGranter.grant() }
+
     @Synchronized
     private fun <T> runAsService(action: () -> T): T {
         val identity = Binder.clearCallingIdentity()

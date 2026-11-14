@@ -133,6 +133,14 @@
     <string name="screen_control_overlay_ready">已允许 enco 显示在其他应用上层。</string>
     <string name="screen_control_overlay_grant">去授权</string>
     <string name="screen_control_permission">允许后可在其他应用上显示快捷球和截图按钮。</string>
+    <string name="screen_control_notifications">通知权限</string>
+    <string name="screen_control_notifications_ready">已允许 enco 显示通知。</string>
+    <string name="screen_control_notifications_permission">允许后可显示手机任务进度和停止操作。</string>
+    <string name="screen_control_notification_settings">通知设置</string>
+    <string name="screen_control_grant_all">一键授权</string>
+    <string name="screen_control_granting">正在授权…</string>
+    <string name="screen_control_grant_incomplete">未能自动开启全部权限，请使用对应的系统设置入口。</string>
+    <string name="screen_control_notification_settings_failed">无法打开通知设置，请在应用信息中手动开启。</string>
     <string name="screen_control_open_failed">无法打开截图按钮，请检查悬浮窗权限。</string>
     <string name="screen_control_capture">截图</string>
     <string name="screen_control_back">返回</string>

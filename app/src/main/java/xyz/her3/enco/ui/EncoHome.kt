@@ -49,10 +49,14 @@ import xyz.her3.enco.ui.theme.LocalEncoColors
 internal fun EncoHome(
     status: ShizukuStatus,
     overlayAllowed: Boolean,
+    notificationsAllowed: Boolean,
+    permissionsGranting: Boolean,
     onOpenChat: () -> Unit,
     onOpenShizuku: () -> Unit,
     onRetry: () -> Unit,
+    onGrantPermissions: () -> Unit,
     onOverlaySettings: () -> Unit,
+    onNotificationSettings: () -> Unit,
     onOpenScreenControl: () -> Unit,
     task: PhoneTaskStatus,
     modelReady: Boolean,
@@ -168,6 +172,40 @@ internal fun EncoHome(
                         if (overlayAllowed) null else R.string.screen_control_overlay_grant,
                         if (overlayAllowed) null else onOverlaySettings,
                     )
+                    Box(Modifier.fillMaxWidth().height(1.dp).background(colors.line))
+                    PermissionRow(
+                        ControlSymbol.CHAT,
+                        R.string.screen_control_notifications,
+                        if (notificationsAllowed) {
+                            R.string.screen_control_notifications_ready
+                        } else {
+                            R.string.screen_control_notifications_permission
+                        },
+                        notificationsAllowed,
+                        if (notificationsAllowed) null else R.string.screen_control_notification_settings,
+                        if (notificationsAllowed) null else onNotificationSettings,
+                    )
+                }
+                if (connected && (!overlayAllowed || !notificationsAllowed)) {
+                    Box(
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(if (permissionsGranting) colors.inset else colors.accent)
+                                .clickable(enabled = !permissionsGranting, role = Role.Button, onClick = onGrantPermissions)
+                                .heightIn(min = 48.dp)
+                                .padding(horizontal = 14.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        EncoText(
+                            stringResource(
+                                if (permissionsGranting) R.string.screen_control_granting else R.string.screen_control_grant_all,
+                            ),
+                            color = if (permissionsGranting) colors.muted else colors.onAccent,
+                            weight = FontWeight.SemiBold,
+                        )
+                    }
                 }
             }
         }
