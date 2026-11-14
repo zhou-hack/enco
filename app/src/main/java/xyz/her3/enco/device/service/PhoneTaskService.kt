@@ -62,6 +62,7 @@ internal data class PhoneTaskStatus(
     val review: PhoneTaskReview? = null,
     val progress: PhoneTaskProgress? = null,
     val taskId: String? = null,
+    val canViewResult: Boolean = false,
 ) {
     val completed: Boolean get() = !running && message == R.string.phone_task_finished
 }
@@ -743,6 +744,13 @@ class PhoneTaskService : Service() {
 
         internal fun answerTap(allow: Boolean) {
             pendingTap?.complete(allow)
+        }
+
+        internal fun offerResult(taskId: String) {
+            val current = status.value
+            if (current.taskId == taskId && !current.running) {
+                mutableStatus.value = current.copy(canViewResult = true)
+            }
         }
     }
 

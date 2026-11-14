@@ -42,7 +42,7 @@ class ChatClientTest {
             server.start()
             server.enqueue(sse(chunk("你") + chunk("好") + "data: [DONE]\n\n"))
             val text = StringBuilder()
-            val response = runBlocking { ChatClient().chat(config(server), messages, true) { text.append(it) } }
+            val response = runBlocking { ChatClient().chat(config(server), messages, ChatTool.PHONE_CONTROL) { text.append(it) } }
             assertEquals("你好", text.toString())
             assertEquals("你好", response.content)
             assertNull(response.toolCalls)
@@ -69,14 +69,14 @@ class ChatClientTest {
             server.enqueue(sse(chunk("完成")))
             runBlocking {
                 val client = ChatClient()
-                val callMessage = client.chat(config(server), messages, true) { error("工具参数不应显示为正文") }
+                val callMessage = client.chat(config(server), messages, ChatTool.PHONE_CONTROL) { error("工具参数不应显示为正文") }
                 val call = checkNotNull(callMessage.toolCalls).single()
                 assertEquals(
                     PhoneTaskRequest(PhoneTaskKind.SETTINGS, "打开蓝牙设置"),
                     PhoneTaskTool.parse(call.function.name, call.function.arguments),
                 )
                 val toolResult = ChatMessage("tool", """{"status":"已完成"}""", toolCallId = call.id)
-                assertEquals("完成", client.chat(config(server), messages + callMessage + toolResult, false) {}.content)
+                assertEquals("完成", client.chat(config(server), messages + callMessage + toolResult, null) {}.content)
             }
             server.takeRequest()
             val followUp = encoJson.parseToJsonElement(server.takeRequest().body!!.utf8()).jsonObject
@@ -110,13 +110,50 @@ class ChatClientTest {
             server.enqueue(sse(toolStream + toolFinish))
             val client = ChatClient()
             val toolResult = ChatMessage("tool", "已完成", toolCallId = "previous")
-            for ((advertiseTool, history) in listOf(true to messages, true to messages, false to (messages + toolResult))) {
+            val scenarios =
+                listOf(
+                    ChatTool.PHONE_CONTROL to messages,
+                    ChatTool.PHONE_CONTROL to messages,
+                    null to (messages + toolResult),
+                )
+            for ((tool, history) in scenarios) {
                 val error =
                     assertThrows(ChatException::class.java) {
-                        runBlocking { client.chat(config(server), history, advertiseTool) {} }
+                        runBlocking { client.chat(config(server), history, tool) {} }
                     }
                 assertEquals(ChatFailure.INVALID_RESPONSE, error.reason)
             }
+        }
+    }
+
+    @Test
+    fun onlyAllowsTheResultNavigationToolDuringResultHandling() {
+        MockWebServer().use { server ->
+            server.start()
+            val resultCall =
+                """
+                data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_result","type":"function","function":{"name":"open_task_result","arguments":"{}"}}]}}]}
+                """.trimIndent()
+            server.enqueue(sse(resultCall + "\n\n" + toolFinish))
+            server.enqueue(sse(toolStream + toolFinish))
+            val client = ChatClient()
+            val call = runBlocking { client.chat(config(server), messages, ChatTool.OPEN_TASK_RESULT) {} }.toolCalls?.single()
+            assertEquals("open_task_result", call?.function?.name)
+            val body = encoJson.parseToJsonElement(server.takeRequest().body!!.utf8()).jsonObject
+            val function =
+                body
+                    .getValue("tools")
+                    .jsonArray
+                    .single()
+                    .jsonObject
+                    .getValue("function")
+                    .jsonObject
+            assertEquals("open_task_result", function.getValue("name").jsonPrimitive.content)
+            val error =
+                assertThrows(ChatException::class.java) {
+                    runBlocking { client.chat(config(server), messages, ChatTool.OPEN_TASK_RESULT) {} }
+                }
+            assertEquals(ChatFailure.INVALID_RESPONSE, error.reason)
         }
     }
 

@@ -1,6 +1,7 @@
 package xyz.her3.enco.ui.chat
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
@@ -12,21 +13,27 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import xyz.her3.enco.R
 import xyz.her3.enco.core.agent.PhoneTaskKind
 import xyz.her3.enco.core.agent.PhoneTaskRequest
 import xyz.her3.enco.core.agent.PhoneTaskTool
+import xyz.her3.enco.core.protocol.encoJson
 import xyz.her3.enco.device.service.PhoneTaskService
 import xyz.her3.enco.device.service.PhoneTaskStatus
 import xyz.her3.enco.llm.ChatClient
 import xyz.her3.enco.llm.ChatException
 import xyz.her3.enco.llm.ChatFailure
 import xyz.her3.enco.llm.ChatMessage
+import xyz.her3.enco.llm.ChatTool
 import xyz.her3.enco.llm.ModelConfig
 import xyz.her3.enco.llm.ModelSettingsStore
 import xyz.her3.enco.llm.chatEndpoint
+import xyz.her3.enco.ui.MainActivity
 import java.util.UUID
 
 internal data class ChatState(
@@ -90,7 +97,7 @@ internal class ChatViewModel(
         responseJob =
             viewModelScope.launch {
                 try {
-                    val response = client.chat(model, history, allowPhoneTool = true, onText = ::appendReply)
+                    val response = client.chat(model, history, tool = ChatTool.PHONE_CONTROL, onText = ::appendReply)
                     val call = response.toolCalls?.single()
                     if (call != null) {
                         val request =
@@ -105,6 +112,7 @@ internal class ChatViewModel(
                     if (state.value.pending.isNotEmpty()) recoverDraft(text, R.string.chat_stopped)
                     throw error
                 } catch (error: Exception) {
+                    Log.w("enco.chat", "聊天请求中断：${error.javaClass.simpleName}")
                     recoverDraft(text, error.messageResource(R.string.chat_error))
                 } finally {
                     phoneApproval = null
@@ -163,6 +171,9 @@ internal class ChatViewModel(
             }
         val statusText = getApplication<Application>().getString(status.message)
         val localDetail = status.detail.takeIf { request.kind == PhoneTaskKind.GMAIL_INBOX }.orEmpty()
+        val canOpenResult =
+            status.taskId != null && status.detail.isNotBlank() &&
+                (status.completed || localDetail.isNotBlank()) && request.kind != PhoneTaskKind.WECHAT_MESSAGE
         val fallback = localResult(statusText, status.detail)
         val result =
             buildJsonObject {
@@ -172,20 +183,50 @@ internal class ChatViewModel(
                 } else if (status.detail.isNotBlank()) {
                     put("detail", status.detail)
                 }
+                if (canOpenResult) put("result_available_in_chat", true)
             }.toString()
         val toolMessage = ChatMessage("tool", result, toolCallId = callId)
         val completedHistory = history + toolMessage
         conversation = completedHistory.drop(1)
         mutableState.update { it.copy(generating = true) }
         try {
-            val answer = client.chat(model, completedHistory, allowPhoneTool = false, onText = ::appendReply)
+            val answer =
+                client.chat(
+                    model,
+                    completedHistory,
+                    tool = ChatTool.OPEN_TASK_RESULT.takeIf { canOpenResult },
+                    onText = ::appendReply,
+                )
+            val openResult = answer.toolCalls?.single()
+            if (openResult != null && openResult.function.arguments.isNotBlank()) {
+                val arguments =
+                    try {
+                        encoJson.parseToJsonElement(openResult.function.arguments)
+                    } catch (_: SerializationException) {
+                        throw ChatException(ChatFailure.INVALID_RESPONSE)
+                    }
+                if (arguments != JsonNull && (arguments !is JsonObject || arguments.isNotEmpty())) {
+                    throw ChatException(ChatFailure.INVALID_RESPONSE)
+                }
+            }
             conversation += answer
-            finishTurn(prompt, localResult(checkNotNull(answer.content), localDetail))
+            if (openResult != null) {
+                finishTurn(prompt, answer.content?.let { localResult(it, localDetail) } ?: fallback)
+                val taskId = checkNotNull(status.taskId)
+                PhoneTaskService.offerResult(taskId)
+                MainActivity.showTaskResult(getApplication(), taskId)
+                conversation += ChatMessage("tool", """{"status":"result_available_in_enco"}""", toolCallId = openResult.id)
+            } else {
+                finishTurn(prompt, localResult(checkNotNull(answer.content), localDetail))
+            }
         } catch (error: CancellationException) {
             finishTurn(prompt, fallback)
             throw error
         } catch (error: ChatException) {
             mutableState.update { it.copy(chatNotice = error.messageResource(R.string.chat_error)) }
+            finishTurn(prompt, fallback)
+        } catch (error: Exception) {
+            Log.w("enco.chat", "手机结果回复中断：${error.javaClass.simpleName}，${error.stackTrace.firstOrNull()}")
             finishTurn(prompt, fallback)
         }
     }
@@ -244,7 +285,7 @@ internal class ChatViewModel(
                                     ChatMessage("system", PhoneTaskTool.prompt),
                                     ChatMessage("user", getApplication<Application>().getString(R.string.model_test_prompt)),
                                 ),
-                                allowPhoneTool = true,
+                                tool = ChatTool.PHONE_CONTROL,
                                 onText = {},
                             ).also { if (it.toolCalls != null) throw ChatException(ChatFailure.INVALID_RESPONSE) }
                         mutableState.update { it.copy(settingsNotice = R.string.model_test_success) }

@@ -58,6 +58,7 @@
     <string name="phone_task_overlay_notification">enco 快捷球与任务状态运行中</string>
     <string name="phone_task_overlay_dismiss">关闭任务结果</string>
     <string name="phone_task_overlay_completed">任务完成</string>
+    <string name="phone_task_open_result">查看任务结果</string>
     <string name="phone_task_overlay_open_failed">请手动返回 enco 查看任务。</string>
     <string name="phone_task_overlay_review">确认点按</string>
     <string name="schedule_shortcut_overlay_title">日程快捷悬浮球</string>

@@ -2,6 +2,7 @@ package xyz.her3.enco.ui
 
 import android.app.NotificationManager
 import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -48,10 +49,12 @@ class MainActivity : ComponentActivity() {
     private var notificationsAllowed by mutableStateOf(false)
     private var permissionsGranting by mutableStateOf(false)
     private var activityResumed by mutableStateOf(false)
+    private var openedResult by mutableStateOf<String?>(null)
     private val chat by viewModels<ChatViewModel>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        readResultIntent(intent)
         enableEdgeToEdge()
         setContent {
             EncoTheme {
@@ -59,6 +62,13 @@ class MainActivity : ComponentActivity() {
                 var waitingForShizuku by rememberSaveable { mutableStateOf<ApprovedTask?>(null) }
                 val state by chat.state.collectAsState()
                 val task by PhoneTaskService.status.collectAsState()
+                LaunchedEffect(openedResult) {
+                    openedResult?.let { taskId ->
+                        page = Page.CHAT
+                        PhoneTaskOverlayService.dismissResult(taskId)
+                        openedResult = null
+                    }
+                }
                 val runTask: (ApprovedTask) -> Unit = { approved ->
                     chat.approvePhoneRequest(approved.request) { taskId -> startPhoneTask(approved, taskId) }
                 }
@@ -255,6 +265,17 @@ class MainActivity : ComponentActivity() {
         PhoneTaskOverlayService.startIfAllowed(this)
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        readResultIntent(intent)
+    }
+
+    private fun readResultIntent(intent: Intent) {
+        val taskId = intent.getStringExtra(RESULT_TASK_ID) ?: return
+        val current = PhoneTaskService.status.value
+        if (current.taskId == taskId && current.canViewResult) openedResult = taskId
+    }
+
     override fun onPause() {
         activityResumed = false
         super.onPause()
@@ -327,4 +348,23 @@ class MainActivity : ComponentActivity() {
         val request: PhoneTaskRequest,
         val permission: PhoneTaskPermission,
     ) : java.io.Serializable
+
+    companion object {
+        private const val RESULT_TASK_ID = "result_task_id"
+
+        internal fun showTaskResult(
+            context: Context,
+            taskId: String,
+        ) {
+            try {
+                context.startActivity(
+                    Intent(context, MainActivity::class.java)
+                        .putExtra(RESULT_TASK_ID, taskId)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+                )
+            } catch (error: RuntimeException) {
+                Log.w("enco.ui", "无法打开手机任务结果", error)
+            }
+        }
+    }
 }

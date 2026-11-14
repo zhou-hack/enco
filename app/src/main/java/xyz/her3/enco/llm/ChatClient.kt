@@ -65,6 +65,37 @@ internal data class ChatFunctionCall(
     val arguments: String,
 )
 
+@Serializable
+internal data class ChatTool(
+    val type: String,
+    val function: FunctionDefinition,
+) {
+    companion object {
+        val PHONE_CONTROL =
+            ChatTool("function", FunctionDefinition(PhoneTaskTool.NAME, "在用户授权后执行本次手机任务", PhoneTaskTool.parameters))
+        val OPEN_TASK_RESULT =
+            ChatTool(
+                "function",
+                FunctionDefinition(
+                    "open_task_result",
+                    "返回 enco 查看本次任务的聊天结果",
+                    buildJsonObject {
+                        put("type", "object")
+                        put("properties", buildJsonObject {})
+                        put("additionalProperties", false)
+                    },
+                ),
+            )
+    }
+}
+
+@Serializable
+internal data class FunctionDefinition(
+    val name: String,
+    val description: String,
+    val parameters: JsonObject,
+)
+
 internal enum class ChatFailure {
     UNAUTHORIZED,
     RATE_LIMITED,
@@ -123,20 +154,9 @@ internal class ChatClient(
     suspend fun chat(
         config: ModelConfig,
         messages: List<ChatMessage>,
-        allowPhoneTool: Boolean,
+        tool: ChatTool?,
         onText: (String) -> Unit,
     ): ChatMessage {
-        val tools =
-            if (allowPhoneTool) {
-                listOf(
-                    ChatTool(
-                        "function",
-                        FunctionDefinition(PhoneTaskTool.NAME, "在用户授权后执行本次手机任务", PhoneTaskTool.parameters),
-                    ),
-                )
-            } else {
-                null
-            }
         val content = StringBuilder()
         val reasoning = StringBuilder()
         val arguments = StringBuilder()
@@ -147,7 +167,7 @@ internal class ChatClient(
             messages.map {
                 RequestMessage(it.role, it.content?.let(::JsonPrimitive) ?: JsonNull, it.toolCalls, it.toolCallId, it.reasoning)
             },
-            tools,
+            tool?.let(::listOf),
         ).collect { choice ->
             if (choice.finishReason != null) finishReason = choice.finishReason
             choice.delta?.content?.takeIf(String::isNotEmpty)?.let {
@@ -156,7 +176,7 @@ internal class ChatClient(
             }
             choice.delta?.reasoning?.let(reasoning::append)
             for (delta in choice.delta?.toolCalls.orEmpty()) {
-                if (!allowPhoneTool || delta.index != 0 || (call != null && delta.id != null && delta.id != call?.id)) {
+                if (tool == null || delta.index != 0 || (call != null && delta.id != null && delta.id != call?.id)) {
                     throw ChatException(ChatFailure.INVALID_RESPONSE)
                 }
                 if (call == null) call = delta
@@ -175,7 +195,7 @@ internal class ChatClient(
             call?.let {
                 val id = it.id?.takeIf { id -> id.length in 1..256 && id.none(Char::isWhitespace) }
                 val name = it.function?.name
-                if (finishReason != "tool_calls" || id == null || name.isNullOrBlank() || it.type != "function") {
+                if (finishReason != "tool_calls" || id == null || name == null || name != tool?.function?.name || it.type != "function") {
                     throw ChatException(ChatFailure.INVALID_RESPONSE)
                 }
                 ChatToolCall(id, it.type, ChatFunctionCall(name, arguments.toString()))
@@ -376,19 +396,6 @@ internal class ChatClient(
         @SerialName("tool_calls") val toolCalls: List<ChatToolCall>? = null,
         @SerialName("tool_call_id") val toolCallId: String? = null,
         @SerialName("reasoning_content") val reasoning: String? = null,
-    )
-
-    @Serializable
-    private data class ChatTool(
-        val type: String,
-        val function: FunctionDefinition,
-    )
-
-    @Serializable
-    private data class FunctionDefinition(
-        val name: String,
-        val description: String,
-        val parameters: JsonObject,
     )
 
     @Serializable

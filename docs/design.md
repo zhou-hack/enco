@@ -355,6 +355,7 @@ enco App 进程                                shell 助手进程（uid 2000，�
 
 - 只依赖 **OpenAI Chat Completions 兼容接口**，图片以 base64 `image_url` 传入。
 - 聊天使用同一个流式请求接收自然语言或 `phone_control` 调用。客户端收齐并校验原生 `tool_calls` 后请求本次授权，复用前台任务服务与 Guard。任务结束后用对应的 `tool_call_id` 回传状态并继续当前回复。Gmail 邮件明细仅保留在本机的聊天气泡中。
+- 有本轮结果可查时，模型可调用 `open_task_result` 打开 enco 聊天。只需完成提示的任务留在当前应用。系统阻止自动切换时，悬浮状态条提供「查看任务结果」入口。
 - 设置项：Base URL、API Key、文本模型、视觉模型（可以相同）、温度、超时。提供“测试连接”按钮。
 - 动作输出：优先使用 `response_format: json_object`；服务商不支持时，从回复中提取 JSON 并按 schema 校验，失败最多重试 2 次。
 - 文档中给出几个经过验证的配置示例（例如通义千问、智谱、豆包、DeepSeek + 任一视觉模型），但代码中不写死任何厂商。

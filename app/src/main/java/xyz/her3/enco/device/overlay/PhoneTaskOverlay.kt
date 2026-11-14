@@ -73,6 +73,7 @@ import xyz.her3.enco.ui.theme.LocalEncoColors
 internal class PhoneTaskOverlay(
     private val context: Context,
     private val onOpen: () -> Unit,
+    private val onOpenResult: (String) -> Unit,
     private val onStop: () -> Unit,
     private val onDismiss: () -> Unit,
     private val onPermissionRevoked: () -> Unit,
@@ -131,11 +132,16 @@ internal class PhoneTaskOverlay(
             EncoTheme {
                 if (visible) {
                     if (status.completed) {
-                        CompletedTaskPill(onDismiss)
+                        val id = status.taskId
+                        val openResult = if (status.canViewResult && id != null) ({ onOpenResult(id) }) else null
+                        CompletedTaskPill(openResult, onDismiss)
                     } else {
                         PhoneTaskIsland(
                             status = status,
-                            onOpen = onOpen,
+                            onOpen = {
+                                val id = status.taskId
+                                if (status.canViewResult && id != null) onOpenResult(id) else onOpen()
+                            },
                             onStop = onStop,
                             onDismiss = onDismiss,
                         )
@@ -160,13 +166,15 @@ internal class PhoneTaskOverlay(
     }
 
     fun render(status: PhoneTaskStatus) {
-        if (status.running || status.taskId != this.status.taskId) dismissed = false
+        if (status.running || status.taskId != this.status.taskId || (status.canViewResult && !this.status.canViewResult)) {
+            dismissed = false
+        }
         this.status = status
         refreshVisibility()
     }
 
-    fun dismissResult() {
-        if (status.running) return
+    fun dismissResult(taskId: String?) {
+        if (status.running || taskId != status.taskId) return
         dismissed = true
         refreshVisibility()
     }
@@ -212,7 +220,10 @@ internal class PhoneTaskOverlay(
 }
 
 @Composable
-private fun CompletedTaskPill(onDismiss: () -> Unit) {
+private fun CompletedTaskPill(
+    onOpenResult: (() -> Unit)?,
+    onDismiss: () -> Unit,
+) {
     val colors = LocalEncoColors.current
     val green = colors.positive
     val orbit =
@@ -254,14 +265,17 @@ private fun CompletedTaskPill(onDismiss: () -> Unit) {
                     }
                 }.clickable(
                     role = Role.Button,
-                    onClickLabel = stringResource(R.string.phone_task_overlay_dismiss),
-                    onClick = onDismiss,
+                    onClickLabel =
+                        stringResource(
+                            if (onOpenResult == null) R.string.phone_task_overlay_dismiss else R.string.phone_task_open_result,
+                        ),
+                    onClick = onOpenResult ?: onDismiss,
                 ).padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ControlIcon(ControlSymbol.CHECK, Modifier.size(16.dp), green)
         EncoText(
-            stringResource(R.string.phone_task_overlay_completed),
+            stringResource(if (onOpenResult == null) R.string.phone_task_overlay_completed else R.string.phone_task_open_result),
             Modifier.padding(start = 7.dp),
             color = colors.text,
             size = 13.sp,
@@ -290,12 +304,14 @@ private fun PhoneTaskIsland(
     val action = stringResource(if (status.running) R.string.phone_task_stop else R.string.phone_task_overlay_dismiss)
     val mainAction =
         when {
+            !status.running && status.canViewResult -> onOpen
             !status.running -> onDismiss
             waiting -> onOpen
             else -> null
         }
     val clickLabel =
         when {
+            !status.running && status.canViewResult -> stringResource(R.string.phone_task_open_result)
             !status.running -> stringResource(R.string.phone_task_overlay_dismiss)
             waiting -> stringResource(R.string.phone_task_overlay_review)
             else -> null
@@ -326,7 +342,7 @@ private fun PhoneTaskIsland(
         ) {
             EncoMark(colors.accent, colors.onAccent)
             EncoText(
-                status.statusText(),
+                if (status.canViewResult) stringResource(R.string.phone_task_open_result) else status.statusText(),
                 Modifier
                     .weight(1f)
                     .padding(start = 9.dp),

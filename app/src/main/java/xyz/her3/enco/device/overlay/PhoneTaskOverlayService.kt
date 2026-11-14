@@ -44,8 +44,9 @@ class PhoneTaskOverlayService : Service() {
             PhoneTaskOverlay(
                 this,
                 onOpen = ::openEnco,
+                onOpenResult = { taskId -> MainActivity.showTaskResult(this, taskId) },
                 onStop = { stopService(Intent(this, PhoneTaskService::class.java)) },
-                onDismiss = { taskOverlay?.dismissResult() },
+                onDismiss = { dismissResult(PhoneTaskService.status.value.taskId) },
                 onPermissionRevoked = { stopSelf() },
             )
         val shortcut =
@@ -126,6 +127,10 @@ class PhoneTaskOverlayService : Service() {
         internal val isVisible: Boolean get() = taskOverlay?.isVisible == true
         private val anyOverlayVisible: Boolean
             get() = taskOverlay?.isVisible == true || shortcutOverlay?.isVisible == true
+
+        internal fun dismissResult(taskId: String?) {
+            taskOverlay?.dismissResult(taskId)
+        }
 
         internal fun startIfAllowed(context: Context) {
             if (!Settings.canDrawOverlays(context) || taskOverlay != null || shortcutOverlay != null) return
